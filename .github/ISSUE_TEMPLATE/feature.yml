@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose a command or workflow for the ferric CLI.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed command
+      description: Show the command shape and expected output when possible.
+      placeholder: ferric resource action [flags]
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe current workarounds or other designs.
