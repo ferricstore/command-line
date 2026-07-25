@@ -28,6 +28,7 @@ mise exec -- go vet ./...
 mise exec -- go test ./...
 mise exec -- go test -race ./...
 golangci-lint run ./...
+./scripts/integration-login-oss.sh
 ~~~
 
 Keep changes focused and add tests for user-visible behavior. Construct Cobra
@@ -41,6 +42,13 @@ isolated.
 - Accept dependencies through constructors when a command needs network access.
 - Never print credentials, authentication URLs, or raw secret-bearing config.
 - Return errors to the root command instead of exiting from subcommands.
+
+## Authentication Testing Boundary
+
+This repository runs real username/password login tests against the released
+OSS FerricStore container. Enterprise SSO and API-token provider behavior must
+use mocks here. End-to-end Enterprise authentication belongs in the private
+Enterprise repository and should execute the public CLI as a black box.
 
 ## Pull Requests
 

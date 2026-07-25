@@ -27,6 +27,8 @@ jobs:
       - run: go mod verify
       - run: go vet ./...
       - run: go test -race ./...
+      - name: Test OSS username/password login
+        run: ./scripts/integration-login-oss.sh
 
   publish:
     name: Publish GitHub Release
