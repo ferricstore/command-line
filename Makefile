@@ -2,7 +2,7 @@ GO ?= go
 GOLANGCI_LINT ?= golangci-lint
 GORELEASER ?= goreleaser
 
-.PHONY: build test test-race lint fmt tidy verify snapshot clean
+.PHONY: build test test-race integration-login lint fmt tidy verify snapshot clean
 
 build:
 	$(GO) build -o bin/ferric ./cmd/ferric
@@ -12,6 +12,9 @@ test:
 
 test-race:
 	$(GO) test -race ./...
+
+integration-login:
+	./scripts/integration-login-oss.sh
 
 lint:
 	$(GOLANGCI_LINT) run ./...

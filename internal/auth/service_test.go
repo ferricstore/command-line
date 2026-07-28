@@ -1,0 +1,282 @@
+package auth
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"testing"
+
+	"github.com/ferricstore/command-line/internal/credential"
+	"github.com/ferricstore/command-line/internal/profile"
+)
+
+type memoryProfileStore struct {
+	values map[string]profile.Profile
+	putErr error
+}
+
+func newMemoryProfileStore() *memoryProfileStore {
+	return &memoryProfileStore{values: make(map[string]profile.Profile)}
+}
+
+func (s *memoryProfileStore) Put(_ context.Context, value profile.Profile) error {
+	if s.putErr != nil {
+		return s.putErr
+	}
+	s.values[value.Name] = value
+	return nil
+}
+
+func (s *memoryProfileStore) Get(_ context.Context, name string) (profile.Profile, error) {
+	value, ok := s.values[name]
+	if !ok {
+		return profile.Profile{}, profile.ErrNotFound
+	}
+	return value, nil
+}
+
+type memoryCredentialStore struct {
+	values map[string]string
+	putErr error
+}
+
+func newMemoryCredentialStore() *memoryCredentialStore {
+	return &memoryCredentialStore{values: make(map[string]string)}
+}
+
+func (s *memoryCredentialStore) Put(_ context.Context, name, secret string) error {
+	if s.putErr != nil {
+		return s.putErr
+	}
+	s.values[name] = secret
+	return nil
+}
+
+func (s *memoryCredentialStore) Get(_ context.Context, name string) (string, error) {
+	value, ok := s.values[name]
+	if !ok {
+		return "", credential.ErrNotFound
+	}
+	return value, nil
+}
+
+func (s *memoryCredentialStore) Delete(_ context.Context, name string) error {
+	if _, ok := s.values[name]; !ok {
+		return credential.ErrNotFound
+	}
+	delete(s.values, name)
+	return nil
+}
+
+type fakeValidator struct {
+	err      error
+	url      string
+	username string
+	password string
+}
+
+func (v *fakeValidator) ValidatePassword(_ context.Context, rawURL, username, password string) error {
+	v.url = rawURL
+	v.username = username
+	v.password = password
+	return v.err
+}
+
+type mockProvider struct {
+	method  profile.AuthMethod
+	request LoginRequest
+	result  ProviderResult
+	err     error
+}
+
+func (p *mockProvider) Method() profile.AuthMethod {
+	return p.method
+}
+
+func (p *mockProvider) Login(_ context.Context, request LoginRequest) (ProviderResult, error) {
+	p.request = request
+	return p.result, p.err
+}
+
+func TestPasswordLoginValidatesAndPersists(t *testing.T) {
+	t.Parallel()
+
+	profiles := newMemoryProfileStore()
+	credentials := newMemoryCredentialStore()
+	validator := &fakeValidator{}
+	service := NewService(profiles, credentials, NewPasswordProvider(validator))
+	request := LoginRequest{
+		ProfileName: "production",
+		Method:      profile.AuthMethodPassword,
+		URL:         "ferric://store.example.com:6388",
+		Username:    "operator",
+		Secret:      "password",
+		Store:       true,
+	}
+	result, err := service.Login(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Stored || result.Principal != request.Username {
+		t.Fatalf("Login() = %#v", result)
+	}
+	if validator.url != request.URL || validator.username != request.Username || validator.password != request.Secret {
+		t.Fatalf("validator input = %q/%q/%q", validator.url, validator.username, validator.password)
+	}
+	if got := credentials.values[request.ProfileName]; got != request.Secret {
+		t.Fatalf("stored credential = %q, want password", got)
+	}
+	if got := profiles.values[request.ProfileName]; got.Authentication.Method != profile.AuthMethodPassword {
+		t.Fatalf("stored profile = %#v", got)
+	}
+}
+
+func TestPasswordLoginFailureStoresNothing(t *testing.T) {
+	t.Parallel()
+
+	profiles := newMemoryProfileStore()
+	credentials := newMemoryCredentialStore()
+	want := errors.New("invalid username-password pair")
+	service := NewService(profiles, credentials, NewPasswordProvider(&fakeValidator{err: want}))
+	_, err := service.Login(context.Background(), LoginRequest{
+		ProfileName: "production",
+		URL:         "ferric://store.example.com:6388",
+		Username:    "operator",
+		Secret:      "wrong",
+		Store:       true,
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("Login() error = %v, want authentication error", err)
+	}
+	if len(profiles.values) != 0 || len(credentials.values) != 0 {
+		t.Fatalf("failed login persisted state: profiles=%v credentials=%v", profiles.values, credentials.values)
+	}
+}
+
+func TestPasswordLoginRejectsCredentialsInURL(t *testing.T) {
+	t.Parallel()
+
+	profiles := newMemoryProfileStore()
+	credentials := newMemoryCredentialStore()
+	validator := &fakeValidator{}
+	service := NewService(profiles, credentials, NewPasswordProvider(validator))
+	_, err := service.Login(context.Background(), LoginRequest{
+		ProfileName: "production",
+		URL:         "ferric://operator:embedded-secret@store.example.com:6388",
+		Username:    "operator",
+		Secret:      "prompt-secret",
+		Store:       true,
+	})
+	if err == nil {
+		t.Fatal("Login() accepted credentials embedded in the URL")
+	}
+	if validator.url != "" {
+		t.Fatal("credential-bearing URL reached the SDK validator")
+	}
+	if len(profiles.values) != 0 || len(credentials.values) != 0 {
+		t.Fatal("rejected URL persisted login state")
+	}
+}
+
+func TestEnterpriseProvidersAreMockable(t *testing.T) {
+	t.Parallel()
+
+	methods := []profile.AuthMethod{
+		profile.AuthMethodEnterpriseSSO,
+		profile.AuthMethodEnterpriseAPIToken,
+	}
+	for _, method := range methods {
+		method := method
+		t.Run(string(method), func(t *testing.T) {
+			t.Parallel()
+			profiles := newMemoryProfileStore()
+			credentials := newMemoryCredentialStore()
+			provider := &mockProvider{
+				method: method,
+				result: ProviderResult{
+					Profile: profile.Profile{
+						Name:         "enterprise",
+						ControlURL:   "https://enterprise.example.com",
+						Organization: "acme",
+						Cluster:      "production",
+						Authentication: profile.Authentication{
+							Method: method,
+						},
+					},
+					Principal: "principal-123",
+					Secret:    "renewable-enterprise-credential",
+				},
+			}
+			service := NewService(profiles, credentials, provider)
+			result, err := service.Login(context.Background(), LoginRequest{
+				ProfileName: "enterprise",
+				Method:      method,
+				Store:       true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !result.Stored || provider.request.Method != method {
+				t.Fatalf("Login() = %#v, request = %#v", result, provider.request)
+			}
+			if credentials.values["enterprise"] != provider.result.Secret {
+				t.Fatal("mock Enterprise credential was not persisted through the provider boundary")
+			}
+		})
+	}
+}
+
+func TestProfileFailureRestoresPreviousCredential(t *testing.T) {
+	t.Parallel()
+
+	profiles := newMemoryProfileStore()
+	profiles.putErr = fmt.Errorf("profile write failed")
+	credentials := newMemoryCredentialStore()
+	credentials.values["production"] = "previous"
+	service := NewService(profiles, credentials, NewPasswordProvider(&fakeValidator{}))
+	_, err := service.Login(context.Background(), LoginRequest{
+		ProfileName: "production",
+		URL:         "ferric://store.example.com:6388",
+		Username:    "operator",
+		Secret:      "replacement",
+		Store:       true,
+	})
+	if !errors.Is(err, profiles.putErr) {
+		t.Fatalf("Login() error = %v, want profile error", err)
+	}
+	if got := credentials.values["production"]; got != "previous" {
+		t.Fatalf("credential after rollback = %q, want previous", got)
+	}
+}
+
+func TestLogoutRemovesOnlyLocalCredentialAndIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	profiles := newMemoryProfileStore()
+	profiles.values["production"] = profile.Profile{Name: "production"}
+	credentials := newMemoryCredentialStore()
+	credentials.values["production"] = "secret"
+	service := NewService(profiles, credentials)
+
+	result, err := service.Logout(context.Background(), "production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Removed {
+		t.Fatal("Logout() did not report credential removal")
+	}
+	if _, ok := credentials.values["production"]; ok {
+		t.Fatal("Logout() retained the credential")
+	}
+	if _, ok := profiles.values["production"]; !ok {
+		t.Fatal("Logout() removed profile metadata")
+	}
+
+	result, err = service.Logout(context.Background(), "production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Removed {
+		t.Fatal("second Logout() reported a removal")
+	}
+}

@@ -41,3 +41,20 @@ func TestUnknownCommandReturnsError(t *testing.T) {
 		t.Fatal("Execute() error = nil, want an unknown command error")
 	}
 }
+
+func TestHelpFocusesOnDefaultConnection(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	command := New(buildinfo.Info{})
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs([]string{"--help"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(output.String(), "--profile") {
+		t.Fatalf("primary help exposes advanced profile selection: %q", output.String())
+	}
+}
