@@ -1,20 +1,30 @@
 GO ?= go
 GOLANGCI_LINT ?= golangci-lint
 GORELEASER ?= goreleaser
+CONTAINER_IMAGE ?= ferric:dev
 
-.PHONY: build test test-race integration-login lint fmt tidy verify snapshot clean
+.PHONY: build container test test-container test-race integration-login integration-oss lint fmt tidy verify snapshot clean
 
 build:
 	$(GO) build -o bin/ferric ./cmd/ferric
 
+container:
+	docker build --build-arg VERSION=dev --tag $(CONTAINER_IMAGE) .
+
 test:
 	$(GO) test ./...
+	./scripts/verify-release-version_test.sh
+
+test-container:
+	./scripts/test-container.sh
 
 test-race:
 	$(GO) test -race ./...
 
-integration-login:
+integration-oss:
 	./scripts/integration-login-oss.sh
+
+integration-login: integration-oss
 
 lint:
 	$(GOLANGCI_LINT) run ./...
@@ -29,6 +39,7 @@ verify:
 	$(GO) mod verify
 	$(GO) vet ./...
 	$(GO) test ./...
+	./scripts/verify-release-version_test.sh
 
 snapshot:
 	$(GORELEASER) release --snapshot --clean

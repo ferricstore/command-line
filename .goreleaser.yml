@@ -33,6 +33,7 @@ archives:
           - zip
     name_template: >-
       {{ .ProjectName }}_
+      {{- .Version }}_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "arm64" }}arm64
@@ -52,4 +53,5 @@ changelog:
   use: github-native
 
 release:
+  name_template: "Ferric CLI v{{ .Version }} for FerricStore OSS v{{ .Version }}"
   prerelease: auto

@@ -50,6 +50,28 @@ func flowRecordsOutput(records []ferricstore.FlowRecord) any {
 	return result
 }
 
+func flowClaimsOutput(claims []ferricstore.ClaimedItem) any {
+	result := make([]any, len(claims))
+	for index := range claims {
+		claim := claims[index]
+		item := map[string]any{
+			"id":            claim.ID,
+			"lease_token":   claim.LeaseToken,
+			"fencing_token": claim.FencingToken,
+			"type":          claim.Type,
+			"state":         claim.State,
+		}
+		putOutput(item, "partition_key", claim.PartitionKey)
+		putOutput(item, "run_state", claim.RunState)
+		putOutput(item, "payload", claim.Payload)
+		if len(claim.Attributes) != 0 {
+			item["attributes"] = claim.Attributes
+		}
+		result[index] = item
+	}
+	return result
+}
+
 func putOutput(destination map[string]any, key string, value any) {
 	switch typed := value.(type) {
 	case nil:

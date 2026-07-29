@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ferricstore/command-line/internal/connection"
+	"github.com/ferricstore/command-line/internal/outputcontract"
 	"github.com/ferricstore/command-line/internal/profile"
 	ferricstore "github.com/ferricstore/ferricstore-go"
 	"github.com/spf13/cobra"
@@ -105,7 +106,8 @@ func newQueueClaimCommand(dependencies dependencies) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				return claimer.ClaimJobs(ctx, options)
+				claims, err := claimer.ClaimJobs(ctx, options)
+				return flowClaimsOutput(claims), err
 			})
 		},
 	}
@@ -152,12 +154,15 @@ func newFlowListCommand(dependencies dependencies, service string) *cobra.Comman
 	command := &cobra.Command{
 		Use:   "list <type>",
 		Short: "List " + service + " executions by type",
-		Example: "  ferric " + service + " list email\n" +
-			"  ferric " + service + " list email --state failed --limit 20 --reverse",
+		Example: "  ferric " + service + " list email --partition tenant-a\n" +
+			"  ferric " + service + " list email --partition tenant-a --state failed --limit 20 --reverse",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
 			options, err := flags.options(command)
 			if err != nil {
+				return err
+			}
+			if err := validateFlowListQuery(args[0], options); err != nil {
 				return err
 			}
 			return runNetworkCommand(command, dependencies, "list "+service+" executions", func(ctx context.Context, client connection.Client, _ profile.Profile) (any, error) {
@@ -170,8 +175,31 @@ func newFlowListCommand(dependencies dependencies, service string) *cobra.Comman
 			})
 		},
 	}
-	flags.add(command, true)
+	flags.addQuery(command, fullFlowReadFlagSet)
 	return command
+}
+
+func validateFlowListQuery(flowType string, options ferricstore.ReadOptions) error {
+	if flowType == "any" && len(options.Attributes) == 0 {
+		return errors.New("list requires a concrete type or an attribute predicate")
+	}
+	terminalOnly := options.TerminalOnly != nil && *options.TerminalOnly
+	if !terminalOnly && options.State == "any" && len(options.Attributes) == 0 {
+		return errors.New("list with state any requires an attribute predicate")
+	}
+	if terminalOnly {
+		return validateTerminalQueryState(options.State)
+	}
+	return nil
+}
+
+func validateTerminalQueryState(state string) error {
+	switch state {
+	case "", "any", "completed", "failed", "cancelled":
+		return nil
+	default:
+		return errors.New("terminal state must be completed, failed, cancelled, or any")
+	}
 }
 
 type flowLeaseExtender interface {
@@ -531,7 +559,7 @@ func newFlowStatsCommand(dependencies dependencies, service string) *cobra.Comma
 			})
 		},
 	}
-	flags.add(command, true)
+	flags.addAdmin(command, true)
 	return command
 }
 
@@ -571,7 +599,8 @@ func newFlowPolicyGetCommand(dependencies dependencies, service string) *cobra.C
 				if err != nil {
 					return nil, err
 				}
-				return getter.PolicyGet(ctx, args[0], state)
+				result, err := getter.PolicyGet(ctx, args[0], state)
+				return outputcontract.Policy(result), err
 			})
 		},
 	}
@@ -620,7 +649,8 @@ func newFlowPolicySetCommand(dependencies dependencies, service string) *cobra.C
 				if err != nil {
 					return nil, err
 				}
-				return setter.SetPolicy(ctx, args[0], options)
+				result, err := setter.SetPolicy(ctx, args[0], options)
+				return outputcontract.Policy(result), err
 			})
 		},
 	}

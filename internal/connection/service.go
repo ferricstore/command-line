@@ -25,7 +25,7 @@ type Provider interface {
 	Open(context.Context, profile.Profile, string) (Client, error)
 }
 
-// Service loads saved login state and routes it to a connection provider.
+// Service routes saved or ephemeral credentials to connection providers.
 type Service struct {
 	profiles    profile.Store
 	credentials credential.Store
@@ -57,8 +57,8 @@ func (s *Service) Open(ctx context.Context, profileName string) (Client, profile
 	if err != nil {
 		return nil, profile.Profile{}, fmt.Errorf("load profile %q: %w", profileName, err)
 	}
-	provider, ok := s.providers[storedProfile.Authentication.Method]
-	if !ok {
+	provider, err := s.provider(storedProfile.Authentication.Method)
+	if err != nil {
 		return nil, profile.Profile{}, fmt.Errorf(
 			"authentication method %q for profile %q is not available in this build",
 			storedProfile.Authentication.Method,
@@ -77,4 +77,31 @@ func (s *Service) Open(ctx context.Context, profileName string) (Client, profile
 		return nil, profile.Profile{}, fmt.Errorf("connect using profile %q: provider returned no client", profileName)
 	}
 	return client, storedProfile, nil
+}
+
+// OpenEphemeral opens a client from credentials that are never persisted.
+func (s *Service) OpenEphemeral(ctx context.Context, credentials EphemeralCredentials) (Client, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	provider, err := s.provider(credentials.Profile.Authentication.Method)
+	if err != nil {
+		return nil, err
+	}
+	client, err := provider.Open(ctx, credentials.Profile, credentials.Secret)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, errors.New("authentication provider returned no client")
+	}
+	return client, nil
+}
+
+func (s *Service) provider(method profile.AuthMethod) (Provider, error) {
+	provider, ok := s.providers[method]
+	if !ok {
+		return nil, fmt.Errorf("authentication method %q is not available in this build", method)
+	}
+	return provider, nil
 }

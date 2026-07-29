@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -11,7 +12,7 @@ type outputFixture struct {
 	FencingToken int64
 }
 
-func TestWriteResultFormatsStructuredValuesWithStableFieldNames(t *testing.T) {
+func TestWriteResultRejectsStructWithoutExplicitOutputContract(t *testing.T) {
 	t.Parallel()
 
 	var output bytes.Buffer
@@ -20,12 +21,11 @@ func TestWriteResultFormatsStructuredValuesWithStableFieldNames(t *testing.T) {
 		LeaseToken:   "lease",
 		FencingToken: 7,
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil || !strings.Contains(err.Error(), "explicit output contract") {
+		t.Fatalf("writeResult() error = %v", err)
 	}
-	want := "{\n  \"fencing_token\": 7,\n  \"id\": \"job-42\",\n  \"lease_token\": \"lease\"\n}\n"
-	if output.String() != want {
-		t.Fatalf("output = %q, want %q", output.String(), want)
+	if output.Len() != 0 {
+		t.Fatalf("writeResult() wrote partial output: %q", output.String())
 	}
 }
 

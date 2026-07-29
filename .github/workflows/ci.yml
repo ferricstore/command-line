@@ -22,7 +22,6 @@ jobs:
       fail-fast: false
       matrix:
         go-version:
-          - 1.24.x
           - 1.25.x
           - 1.26.x
     steps:
@@ -49,6 +48,8 @@ jobs:
           go-version: 1.26.5
           cache: true
       - run: go mod download
+      - name: Test release version policy
+        run: ./scripts/verify-release-version_test.sh
       - name: Check formatting
         run: |
           files="$(gofmt -l .)"
@@ -79,7 +80,7 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.12.2
-          args: --timeout=5m ./...
+          args: --timeout=5m --build-tags=integration ./...
 
   package:
     name: Release Snapshot
@@ -102,8 +103,18 @@ jobs:
           version: v2.17.0
           args: release --snapshot --clean
 
-  oss-login:
-    name: OSS Login Integration
+  container:
+    name: Container Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and test the utility image
+        run: make test-container
+
+  oss-integration:
+    name: OSS CLI Integration
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -114,5 +125,5 @@ jobs:
         with:
           go-version: 1.26.5
           cache: true
-      - name: Test OSS username/password login
-        run: ./scripts/integration-login-oss.sh
+      - name: Test CLI against protected-mode FerricStore OSS
+        run: make integration-oss

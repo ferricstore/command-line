@@ -25,10 +25,12 @@ jobs:
           cache: true
       - run: go mod download
       - run: go mod verify
+      - name: Verify release tag matches FerricStore OSS
+        run: ./scripts/verify-release-version.sh "$GITHUB_REF_NAME"
       - run: go vet ./...
       - run: go test -race ./...
-      - name: Test OSS username/password login
-        run: ./scripts/integration-login-oss.sh
+      - name: Test CLI against protected-mode FerricStore OSS
+        run: make integration-oss
 
   publish:
     name: Publish GitHub Release
@@ -56,3 +58,64 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-container:
+    name: Publish Container Image
+    needs:
+      - validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set release metadata
+        id: release
+        shell: bash
+        run: |
+          echo "version=${GITHUB_REF_NAME#v}" >>"$GITHUB_OUTPUT"
+          echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >>"$GITHUB_OUTPUT"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate image tags and labels
+        id: metadata
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        with:
+          images: ghcr.io/ferricstore/command-line
+          tags: |
+            type=raw,value=${{ github.ref_name }}
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+      - name: Build and publish multi-platform image
+        id: push
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.release.outputs.created }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+      - name: Attest the published image
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-name: ghcr.io/ferricstore/command-line
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

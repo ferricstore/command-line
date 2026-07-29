@@ -64,6 +64,71 @@ func TestStoreRawCommandUsesRequestedWireCommand(t *testing.T) {
 	}
 }
 
+func TestStoreRawDestructiveCommandRequiresConfirmationBeforeConnecting(t *testing.T) {
+	t.Parallel()
+
+	client := &cliConnectionClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{"--profile", "production", "store", "command", "FLUSHDB"})
+
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "requires --yes") {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if client.command != nil {
+		t.Fatalf("destructive command reached SDK without confirmation: %#v", client.command)
+	}
+}
+
+func TestStoreRawDestructiveCommandRunsAfterConfirmation(t *testing.T) {
+	t.Parallel()
+
+	client := &cliConnectionClient{result: "OK"}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{"--profile", "production", "store", "command", "FLUSHDB", "--yes"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(client.command, []any{"FLUSHDB"}) {
+		t.Fatalf("SDK command = %#v", client.command)
+	}
+}
+
+func TestStoreRawSafeCommandPreservesTrailingYesArgument(t *testing.T) {
+	t.Parallel()
+
+	client := &cliConnectionClient{result: "--yes"}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{"--profile", "production", "store", "command", "ECHO", "--yes"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(client.command, []any{"ECHO", "--yes"}) {
+		t.Fatalf("SDK command = %#v", client.command)
+	}
+}
+
+func TestStoreRawConfirmedCommandPreservesLiteralYesArgument(t *testing.T) {
+	t.Parallel()
+
+	client := &cliConnectionClient{result: "OK"}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{
+		"--profile", "production", "store", "command", "--yes",
+		"CONFIG", "SET", "feature.flag", "--yes",
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	want := []any{"CONFIG", "SET", "feature.flag", "--yes"}
+	if !reflect.DeepEqual(client.command, want) {
+		t.Fatalf("SDK command = %#v, want %#v", client.command, want)
+	}
+}
+
 func TestEveryStoreHelperHasDescriptionAndExample(t *testing.T) {
 	t.Parallel()
 

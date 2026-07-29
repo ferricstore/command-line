@@ -19,9 +19,11 @@ scope. Every operation must work well in scripts, CI, and a normal terminal.
 ferric [--output auto|json|raw] [--timeout 10s] <service> <operation>
 ~~~
 
-The selected connection is resolved in this order: hidden `--profile`,
-`FERRIC_PROFILE`, the profile selected by `ferric profile use`, then `default`.
-Most users therefore never need to know about profiles.
+The selected connection is resolved in this order: hidden `--profile`, a
+complete direct environment credential set, `FERRIC_PROFILE`, the profile
+selected by `ferric profile use`, then `default`. Most users therefore never
+need to know about profiles. Direct environment credentials are atomic and
+ephemeral; missing values never fall back to saved metadata or the keyring.
 
 `--output auto` prints scalar results directly and structured results as
 indented JSON. `--output json` always emits valid JSON. `--output raw` emits
@@ -56,6 +58,12 @@ keystore. Enterprise providers are integration boundaries in this public
 repository and are exercised with mocks; live Enterprise tests belong in the
 Enterprise repository.
 
+CI and containers can bypass persistence with `FERRIC_URL`, `FERRIC_USERNAME`,
+and `FERRIC_PASSWORD` or `FERRIC_PASSWORD_FILE`. Enterprise machine builds use
+`FERRIC_CONTROL_URL`, `FERRIC_ORGANIZATION`, `FERRIC_CLUSTER`, and
+`FERRIC_API_TOKEN` or `FERRIC_API_TOKEN_FILE`. Secret-file variants are
+preferred for Docker and Kubernetes mounts.
+
 ## Store
 
 The common path preserves Redis command vocabulary while keeping it inside a
@@ -78,7 +86,10 @@ locks, rate limiting, fetch-or-compute, and key inspection.
 
 `ferric store command <name> [args...]` is the explicit escape hatch for a new
 or specialized server command that does not yet have a polished helper. It is
-not a shell and executes exactly one SDK command.
+not a shell and executes exactly one SDK command. Safety-sensitive raw commands
+are classified before a connection opens and require `--yes`, for example
+`ferric store command FLUSHDB --yes`. For safe commands, a trailing `--yes`
+remains an ordinary protocol argument.
 
 Atomic batches use a JSON file or stdin, keeping MULTI/EXEC scriptable without
 adding a shell:
@@ -86,7 +97,11 @@ adding a shell:
 ~~~text
 ferric store transaction commands.json --key shared-slot-key
 ferric store transaction - --watch account:42
+ferric store transaction administrative-commands.json --yes
 ~~~
+
+A transaction containing a safety-sensitive administrative command is rejected
+before connecting unless `--yes` is present.
 
 ## Queue
 
@@ -96,7 +111,7 @@ Queues are the job-oriented view of FerricFlow. The primary vocabulary is:
 ferric queue enqueue <type> <id> [payload]       # alias: send
 ferric queue claim <type> --worker <name>        # alias: receive
 ferric queue describe <id>                       # aliases: get, inspect
-ferric queue list <type>
+ferric queue list <type> --partition <key>
 ferric queue extend <id> --lease-token ... --fencing-token ...
 ferric queue complete <id> --lease-token ... --fencing-token ... # alias: ack
 ferric queue retry <id> --lease-token ... --fencing-token ...    # alias: nack
@@ -123,15 +138,18 @@ Workflows expose the full stateful view of FerricFlow:
 ~~~text
 ferric workflow start <type> <id> [payload]
 ferric workflow describe <id>                    # aliases: get, inspect
-ferric workflow list <type>
-ferric workflow search [filters]
+ferric workflow list <type> --partition <key>
+ferric workflow search --partition <key> --attribute <name=value> [filters]
+ferric workflow query <fql> [--param name=value]
+ferric workflow query explain <fql> [--analyze]
+ferric workflow query indexes [index-id]
 ferric workflow history <id>
 ferric workflow signal <id> <signal>
 ferric workflow claim <type> --state <state> --worker <name>
 ferric workflow transition <id> <from> <to> --lease-token ... --fencing-token ...
 ferric workflow complete|retry|fail|cancel <id> [lease flags]
 ferric workflow rewind <id> --to-event <event-id>
-ferric workflow children <id>
+ferric workflow children <id> --partition <key>
 ferric workflow values get <ref>...
 ferric workflow policy get|set <type>
 ~~~
@@ -139,6 +157,21 @@ ferric workflow policy get|set <type>
 The workflow commands share payload, partition, attributes, time, lease, and
 fencing flags with the queue view so users do not have to learn two syntaxes.
 Queue-created jobs can be inspected and managed through workflow commands.
+
+FQL-backed collection helpers (`list`, lineage, terminal, failure, and stuck
+reads) require an exact `--partition`. `workflow search` additionally requires
+at least one `--attribute name=value` or `--state-meta state.name=value`
+predicate. These helpers intentionally do not expose cold-projection flags,
+because FQL collection paths operate on the bounded live query contract.
+
+`workflow query` is the direct FQL1 surface. The query may be supplied as one
+argument or with `--file <path>`; `--file -` reads stdin. Repeated `--param`
+values are strings. `--params-json` and `--params-file` accept a JSON object of
+typed string, boolean, and numeric values. Query output includes records or the
+count result together with page, quality, and resource-usage contracts.
+`query explain --analyze` executes an admitted plan without returning records,
+and `query indexes` reports the OSS catalog, lifecycle, validation, and
+statistics status.
 
 ## Workflow schedules
 
@@ -153,8 +186,14 @@ ferric workflow schedule list
 ferric workflow schedule pause <id>
 ferric workflow schedule resume <id>
 ferric workflow schedule trigger <id>                     # alias: fire
+ferric workflow schedule fire-due --worker <name>
 ferric workflow schedule delete <id> --yes
 ~~~
+
+Interval schedules may use `--catchup fire_once` to coalesce elapsed
+occurrences into one recovery fire. Schedule output includes recurrence,
+overlap, catch-up, counters, last outcome, and next-run information from the
+typed schedule contract.
 
 ## Server and operations
 

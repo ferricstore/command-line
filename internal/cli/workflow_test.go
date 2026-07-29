@@ -17,6 +17,7 @@ type workflowTestClient struct {
 	signalOptions     ferricstore.SignalOptions
 	transitionOptions ferricstore.TransitionOptions
 	searchOptions     ferricstore.SearchOptions
+	searchCalls       int
 	closed            bool
 }
 
@@ -38,6 +39,7 @@ func (client *workflowTestClient) Transition(_ context.Context, options ferricst
 	return &ferricstore.FlowRecord{ID: options.ID, Type: "order", State: options.ToState, Version: 2}, nil
 }
 func (client *workflowTestClient) Search(_ context.Context, options ferricstore.SearchOptions) ([]ferricstore.FlowRecord, error) {
+	client.searchCalls++
 	client.searchOptions = options
 	return []ferricstore.FlowRecord{{ID: "order-42", Type: options.Type, State: options.State, Version: 2}}, nil
 }
@@ -127,7 +129,7 @@ func TestWorkflowSearchBuildsBoundedAttributeQuery(t *testing.T) {
 	command.SetErr(&output)
 	command.SetArgs([]string{
 		"--profile", "production", "workflow", "search", "--type", "order", "--state", "failed",
-		"--partition", "tenant-a", "--attribute", "region=eu", "--limit", "20", "--reverse",
+		"--partition", "tenant-a", "--attribute", "region=eu", "--state-meta", "review.approver=ada", "--limit", "20", "--reverse",
 	})
 
 	if err := command.Execute(); err != nil {
@@ -140,8 +142,77 @@ func TestWorkflowSearchBuildsBoundedAttributeQuery(t *testing.T) {
 	if !reflect.DeepEqual(options.Attributes, map[string]any{"region": "eu"}) {
 		t.Fatalf("attributes = %#v", options.Attributes)
 	}
+	if !reflect.DeepEqual(options.StateMeta, map[string]map[string]any{"review": {"approver": "ada"}}) {
+		t.Fatalf("state metadata = %#v", options.StateMeta)
+	}
 	if !strings.Contains(output.String(), `"id": "order-42"`) {
 		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestWorkflowCollectionQueriesValidateScopeBeforeSDKCall(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "list partition", args: []string{"workflow", "list", "order"}, want: "partition is required"},
+		{name: "search partition", args: []string{"workflow", "search", "--type", "order", "--attribute", "region=eu"}, want: "partition is required"},
+		{name: "search predicate", args: []string{"workflow", "search", "--type", "order", "--partition", "tenant-a"}, want: "requires an attribute or state metadata"},
+		{name: "state metadata type", args: []string{"workflow", "search", "--partition", "tenant-a", "--state-meta", "review.approver=ada"}, want: "require a concrete workflow type"},
+		{name: "terminal state", args: []string{"workflow", "search", "--partition", "tenant-a", "--attribute", "region=eu", "--terminal-only", "--state", "running"}, want: "terminal state must be"},
+		{name: "terminal type", args: []string{"workflow", "terminals", "any", "--partition", "tenant-a"}, want: "require a concrete workflow type"},
+		{name: "stuck partition", args: []string{"workflow", "stuck", "order"}, want: "partition is required"},
+		{name: "stuck type", args: []string{"workflow", "stuck", "any", "--partition", "tenant-a"}, want: "require a concrete workflow type"},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			client := &workflowTestClient{}
+			command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+			command.SetArgs(append([]string{"--profile", "production"}, test.args...))
+			err := command.Execute()
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Execute() error = %v, want %q", err, test.want)
+			}
+			if client.searchCalls != 0 {
+				t.Fatal("invalid collection query reached the SDK")
+			}
+		})
+	}
+}
+
+func TestWorkflowQueryHelpersOnlyExposeSupportedFlags(t *testing.T) {
+	t.Parallel()
+
+	root := New(buildinfo.Info{})
+	search, _, err := root.Find([]string{"workflow", "search"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"include-cold", "consistent"} {
+		if search.Flags().Lookup(name) != nil {
+			t.Fatalf("workflow search exposes unsupported --%s", name)
+		}
+	}
+	children, _, err := root.Find([]string{"workflow", "children"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"attribute", "terminal-only", "include-cold", "consistent"} {
+		if children.Flags().Lookup(name) != nil {
+			t.Fatalf("workflow children exposes unsupported --%s", name)
+		}
+	}
+	stats, _, err := root.Find([]string{"workflow", "stats"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Flags().Lookup("include-cold") == nil || stats.Flags().Lookup("consistent") == nil {
+		t.Fatal("workflow stats lost its administrative cold-read flags")
 	}
 }
 

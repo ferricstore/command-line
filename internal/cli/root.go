@@ -32,6 +32,7 @@ func New(info buildinfo.Info, options ...Option) *cobra.Command {
 			option(&dependencies)
 		}
 	}
+	dependencies.finalize()
 
 	root := &cobra.Command{
 		Use:   "ferric",
@@ -79,17 +80,8 @@ func New(info buildinfo.Info, options ...Option) *cobra.Command {
 }
 
 func selectedProfile(command *cobra.Command, dependencies dependencies) (string, error) {
-	flag := command.Root().PersistentFlags().Lookup(profileFlagName)
-	if flag != nil && flag.Changed {
-		name, err := command.Root().PersistentFlags().GetString(profileFlagName)
-		if err != nil {
-			return "", err
-		}
-		name = strings.TrimSpace(name)
-		if name == "" {
-			return "", errors.New("profile name is required")
-		}
-		return name, nil
+	if name, present, err := explicitProfile(command); present || err != nil {
+		return name, err
 	}
 	if name := strings.TrimSpace(os.Getenv("FERRIC_PROFILE")); name != "" {
 		return name, nil
@@ -104,6 +96,22 @@ func selectedProfile(command *cobra.Command, dependencies dependencies) (string,
 		}
 	}
 	return defaultProfileName, nil
+}
+
+func explicitProfile(command *cobra.Command) (string, bool, error) {
+	flag := command.Root().PersistentFlags().Lookup(profileFlagName)
+	if flag != nil && flag.Changed {
+		name, err := command.Root().PersistentFlags().GetString(profileFlagName)
+		if err != nil {
+			return "", true, err
+		}
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return "", true, errors.New("profile name is required")
+		}
+		return name, true, nil
+	}
+	return "", false, nil
 }
 
 func newVersionCommand(info buildinfo.Info) *cobra.Command {

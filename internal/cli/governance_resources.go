@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ferricstore/command-line/internal/connection"
+	"github.com/ferricstore/command-line/internal/outputcontract"
 	"github.com/ferricstore/command-line/internal/profile"
 	ferricstore "github.com/ferricstore/ferricstore-go"
 	"github.com/spf13/cobra"
@@ -52,7 +53,7 @@ func newBudgetGetCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := getter.BudgetGet(ctx, args[0])
-				return compactOutput(result), err
+				return outputcontract.Budget(result), err
 			})
 		},
 	}
@@ -85,7 +86,7 @@ func newBudgetListCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := lister.BudgetList(ctx, scope, partition, ferricstore.Int(limit))
-				return compactOutput(result), err
+				return outputcontract.BudgetList(result), err
 			})
 		},
 	}
@@ -134,7 +135,7 @@ func newBudgetReserveCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := reserver.BudgetReserve(ctx, args[0], amount, limitPointer, windowPointer, reservationID, nil)
-				return compactOutput(result), err
+				return outputcontract.Budget(&result), err
 			})
 		},
 	}
@@ -182,7 +183,7 @@ func newBudgetCommitCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := committer.BudgetCommit(ctx, args[0], args[1], amount, usage, nil)
-				return compactOutput(result), err
+				return outputcontract.Budget(&result), err
 			})
 		},
 	}
@@ -207,7 +208,7 @@ func newBudgetReleaseCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := releaser.BudgetRelease(ctx, args[0], args[1], nil)
-				return compactOutput(result), err
+				return outputcontract.Budget(&result), err
 			})
 		},
 	}
@@ -252,7 +253,7 @@ func newLimitGetCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := getter.LimitGet(ctx, args[0], nil)
-				return compactOutput(result), err
+				return outputcontract.Limit(result), err
 			})
 		},
 	}
@@ -285,7 +286,7 @@ func newLimitListCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := lister.LimitList(ctx, scope, partition, ferricstore.Int(limit), nil)
-				return compactOutput(result), err
+				return outputcontract.LimitList(result), err
 			})
 		},
 	}
@@ -333,7 +334,7 @@ func newLimitLeaseCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := leaser.LimitLease(ctx, args[0], shardID, amount, ttlMS, limitPointer, nil)
-				return compactOutput(result), err
+				return outputcontract.Limit(&result), err
 			})
 		},
 	}
@@ -369,7 +370,7 @@ func newLimitSpendCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := spender.LimitSpend(ctx, args[0], shardID, amount, nil)
-				return compactOutput(result), err
+				return outputcontract.Limit(&result), err
 			})
 		},
 	}
@@ -404,7 +405,7 @@ func newLimitReleaseCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := releaser.LimitRelease(ctx, args[0], options)
-				return compactOutput(result), err
+				return outputcontract.Limit(&result), err
 			})
 		},
 	}
@@ -472,7 +473,7 @@ func newEffectGetCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := getter.EffectGet(ctx, args[0], args[1], partition)
-				return compactOutput(result), err
+				return outputcontract.Effect(result), err
 			})
 		},
 	}
@@ -512,7 +513,7 @@ func newEffectReserveCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := reserver.EffectReserve(ctx, args[0], args[1], args[2], options)
-				return compactOutput(result), err
+				return outputcontract.Effect(&result), err
 			})
 		},
 	}
@@ -570,21 +571,21 @@ func newEffectStatusCommand(dependencies dependencies, action string) *cobra.Com
 						return nil, err
 					}
 					result, err := operator.EffectConfirm(ctx, args[0], args[1], options)
-					return compactOutput(result), err
+					return outputcontract.Effect(&result), err
 				case "fail":
 					operator, err := requireClientCapability[effectFailer](client, "effect failure")
 					if err != nil {
 						return nil, err
 					}
 					result, err := operator.EffectFail(ctx, args[0], args[1], options)
-					return compactOutput(result), err
+					return outputcontract.Effect(&result), err
 				default:
 					operator, err := requireClientCapability[effectCompensator](client, "effect compensation")
 					if err != nil {
 						return nil, err
 					}
 					result, err := operator.EffectCompensate(ctx, args[0], args[1], options)
-					return compactOutput(result), err
+					return outputcontract.Effect(&result), err
 				}
 			})
 		},

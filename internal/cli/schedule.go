@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ferricstore/command-line/internal/connection"
+	"github.com/ferricstore/command-line/internal/outputcontract"
 	"github.com/ferricstore/command-line/internal/profile"
 	ferricstore "github.com/ferricstore/ferricstore-go"
 	"github.com/spf13/cobra"
@@ -39,7 +40,7 @@ func newScheduleCommand(dependencies dependencies) *cobra.Command {
 }
 
 type scheduleCreator interface {
-	ScheduleCreate(context.Context, string, ferricstore.ScheduleOptions) (ferricstore.ScheduleResult, error)
+	ScheduleCreate(context.Context, string, ferricstore.ScheduleOptions) (ferricstore.ScheduleRecord, error)
 }
 
 type scheduleCreateFlags struct {
@@ -58,6 +59,7 @@ type scheduleCreateFlags struct {
 	every        time.Duration
 	cron         string
 	timezone     string
+	catchup      string
 	startAt      string
 	endAt        string
 	overlap      string
@@ -107,6 +109,7 @@ func newScheduleCreateCommand(dependencies dependencies) *cobra.Command {
 	command.Flags().DurationVar(&flags.every, "every", 0, "run repeatedly at this interval")
 	command.Flags().StringVar(&flags.cron, "cron", "", "run repeatedly using this cron expression")
 	command.Flags().StringVar(&flags.timezone, "timezone", "", "IANA timezone for a cron schedule")
+	command.Flags().StringVar(&flags.catchup, "catchup", "", "interval recovery policy: fire_once")
 	command.Flags().StringVar(&flags.startAt, "start-at", "", "first recurring run at RFC3339 time or Unix milliseconds")
 	command.Flags().StringVar(&flags.endAt, "end-at", "", "stop recurring runs at RFC3339 time or Unix milliseconds")
 	command.Flags().StringVar(&flags.overlap, "overlap", "", "recurring overlap policy: allow, skip, queue_after_previous, or fail_schedule")
@@ -116,6 +119,7 @@ func newScheduleCreateCommand(dependencies dependencies) *cobra.Command {
 	flags.payload.addFlags(command, "payload")
 	_ = command.RegisterFlagCompletionFunc("state", completeCommonFlowState)
 	_ = command.RegisterFlagCompletionFunc("overlap", completeScheduleOverlap)
+	_ = command.RegisterFlagCompletionFunc("catchup", completeScheduleCatchup)
 	return command
 }
 
@@ -174,6 +178,19 @@ func (flags scheduleCreateFlags) options(command *cobra.Command, args []string) 
 	if timingChoices > 1 {
 		return ferricstore.ScheduleOptions{}, errors.New("use only one of --at, --after, --every, or --cron")
 	}
+	recurring := flags.every != 0 || flags.cron != ""
+	if recurring && flags.flowID != "" {
+		return ferricstore.ScheduleOptions{}, errors.New("flow-id is only valid for one-shot schedules; use --id-prefix for recurring schedules")
+	}
+	if !recurring && (flags.overlap != "" || command.Flags().Changed("overlap-retry")) {
+		return ferricstore.ScheduleOptions{}, errors.New("overlap settings are only valid for interval or cron schedules")
+	}
+	if !recurring && (command.Flags().Changed("max-fires") || flags.endAt != "") {
+		return ferricstore.ScheduleOptions{}, errors.New("max-fires and end-at are only valid for interval or cron schedules")
+	}
+	if flags.startAt != "" && (flags.at != "" || flags.after != 0) {
+		return ferricstore.ScheduleOptions{}, errors.New("start-at cannot be combined with at or after")
+	}
 	options := ferricstore.ScheduleOptions{Target: target}
 	if flags.at != "" {
 		value, err := parseAbsoluteMilliseconds("at", flags.at)
@@ -206,6 +223,15 @@ func (flags scheduleCreateFlags) options(command *cobra.Command, args []string) 
 	} else if flags.timezone != "" {
 		return options, errors.New("timezone is only valid with --cron")
 	}
+	if flags.catchup != "" {
+		if flags.every == 0 {
+			return options, errors.New("catchup is only valid with --every")
+		}
+		if !strings.EqualFold(strings.TrimSpace(flags.catchup), "fire_once") {
+			return options, errors.New("catchup must be fire_once")
+		}
+		options.CatchupPolicy = "fire_once"
+	}
 	if flags.startAt != "" {
 		value, err := parseAbsoluteMilliseconds("start-at", flags.startAt)
 		if err != nil {
@@ -230,6 +256,9 @@ func (flags scheduleCreateFlags) options(command *cobra.Command, args []string) 
 		}
 	}
 	if command.Flags().Changed("overlap-retry") {
+		if !strings.EqualFold(strings.TrimSpace(flags.overlap), "queue_after_previous") {
+			return options, errors.New("overlap-retry requires --overlap queue_after_previous")
+		}
 		value, err := positiveMilliseconds("overlap-retry", flags.overlapRetry)
 		if err != nil {
 			return options, err
@@ -266,8 +295,12 @@ func completeScheduleOverlap(_ *cobra.Command, _ []string, _ string) ([]string, 
 	return []string{"allow", "skip", "queue_after_previous", "fail_schedule"}, cobra.ShellCompDirectiveNoFileComp
 }
 
+func completeScheduleCatchup(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
+	return []string{"fire_once"}, cobra.ShellCompDirectiveNoFileComp
+}
+
 type scheduleGetter interface {
-	ScheduleGet(context.Context, string, *int64) (*ferricstore.ScheduleResult, error)
+	ScheduleGet(context.Context, string, *int64) (*ferricstore.ScheduleRecord, error)
 }
 
 func newScheduleDescribeCommand(dependencies dependencies) *cobra.Command {
@@ -291,7 +324,7 @@ func newScheduleDescribeCommand(dependencies dependencies) *cobra.Command {
 }
 
 type scheduleLister interface {
-	ScheduleList(context.Context, ferricstore.ScheduleListOptions) ([]ferricstore.ScheduleResult, error)
+	ScheduleList(context.Context, ferricstore.ScheduleListOptions) ([]ferricstore.ScheduleRecord, error)
 }
 
 func newScheduleListCommand(dependencies dependencies) *cobra.Command {
@@ -351,7 +384,7 @@ func completeScheduleState(_ *cobra.Command, _ []string, _ string) ([]string, co
 }
 
 type schedulePauser interface {
-	SchedulePause(context.Context, string, *int64) (ferricstore.ScheduleResult, error)
+	SchedulePause(context.Context, string, ferricstore.ScheduleStatusOptions) (ferricstore.ScheduleRecord, error)
 }
 
 func newSchedulePauseCommand(dependencies dependencies) *cobra.Command {
@@ -366,7 +399,7 @@ func newSchedulePauseCommand(dependencies dependencies) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				result, err := pauser.SchedulePause(ctx, args[0], nil)
+				result, err := pauser.SchedulePause(ctx, args[0], ferricstore.ScheduleStatusOptions{})
 				return scheduleResultOutput(&result), err
 			})
 		},
@@ -374,7 +407,7 @@ func newSchedulePauseCommand(dependencies dependencies) *cobra.Command {
 }
 
 type scheduleResumer interface {
-	ScheduleResume(context.Context, string, *int64) (ferricstore.ScheduleResult, error)
+	ScheduleResume(context.Context, string, ferricstore.ScheduleStatusOptions) (ferricstore.ScheduleRecord, error)
 }
 
 func newScheduleResumeCommand(dependencies dependencies) *cobra.Command {
@@ -389,7 +422,7 @@ func newScheduleResumeCommand(dependencies dependencies) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				result, err := resumer.ScheduleResume(ctx, args[0], nil)
+				result, err := resumer.ScheduleResume(ctx, args[0], ferricstore.ScheduleStatusOptions{})
 				return scheduleResultOutput(&result), err
 			})
 		},
@@ -397,7 +430,7 @@ func newScheduleResumeCommand(dependencies dependencies) *cobra.Command {
 }
 
 type scheduleTriggerer interface {
-	ScheduleFireWithOptions(context.Context, string, ferricstore.ScheduleFireOptions) (ferricstore.ScheduleFireResult, error)
+	ScheduleFire(context.Context, string, ferricstore.ScheduleFireOptions) (ferricstore.ScheduleFireResult, error)
 }
 
 func newScheduleTriggerCommand(dependencies dependencies) *cobra.Command {
@@ -423,7 +456,7 @@ func newScheduleTriggerCommand(dependencies dependencies) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				result, err := triggerer.ScheduleFireWithOptions(ctx, args[0], options)
+				result, err := triggerer.ScheduleFire(ctx, args[0], options)
 				return scheduleFireOutput(result), err
 			})
 		},
@@ -433,7 +466,7 @@ func newScheduleTriggerCommand(dependencies dependencies) *cobra.Command {
 }
 
 type scheduleDueFirer interface {
-	ScheduleFireDueWithOptions(context.Context, ferricstore.ScheduleFireDueOptions) (ferricstore.ScheduleFireDueResult, error)
+	ScheduleFireDue(context.Context, ferricstore.ScheduleFireDueOptions) (ferricstore.ScheduleFireDueResult, error)
 }
 
 func newScheduleFireDueCommand(dependencies dependencies) *cobra.Command {
@@ -476,7 +509,8 @@ func newScheduleFireDueCommand(dependencies dependencies) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				return firer.ScheduleFireDueWithOptions(ctx, options)
+				result, err := firer.ScheduleFireDue(ctx, options)
+				return outputcontract.ScheduleFireDue(result), err
 			})
 		},
 	}
@@ -488,7 +522,7 @@ func newScheduleFireDueCommand(dependencies dependencies) *cobra.Command {
 }
 
 type scheduleDeleter interface {
-	ScheduleDelete(context.Context, string, *int64) (ferricstore.ScheduleResult, error)
+	ScheduleDelete(context.Context, string, ferricstore.ScheduleStatusOptions) error
 }
 
 func newScheduleDeleteCommand(dependencies dependencies) *cobra.Command {
@@ -508,8 +542,8 @@ func newScheduleDeleteCommand(dependencies dependencies) *cobra.Command {
 				if err != nil {
 					return nil, err
 				}
-				result, err := deleter.ScheduleDelete(ctx, args[0], nil)
-				return scheduleResultOutput(&result), err
+				err = deleter.ScheduleDelete(ctx, args[0], ferricstore.ScheduleStatusOptions{})
+				return map[string]any{"id": args[0], "deleted": err == nil}, err
 			})
 		},
 	}
@@ -517,41 +551,54 @@ func newScheduleDeleteCommand(dependencies dependencies) *cobra.Command {
 	return command
 }
 
-func scheduleResultOutput(result *ferricstore.ScheduleResult) any {
+func scheduleResultOutput(result *ferricstore.ScheduleRecord) any {
 	if result == nil {
 		return nil
 	}
 	output := map[string]any{
-		"id":     result.ID,
-		"kind":   result.Kind,
-		"status": result.Status,
-		"target": result.Target,
-		"fires":  result.Fires,
+		"id":              result.ID,
+		"kind":            result.Kind,
+		"state":           result.State,
+		"target":          result.Target,
+		"created_at_ms":   result.CreatedAtMS,
+		"fire_count":      result.FireCount,
+		"attempts":        result.Attempts,
+		"coalesced_count": result.CoalescedCount,
+		"skipped_count":   result.SkippedCount,
 	}
 	putOutput(output, "flow_id", result.FlowID)
 	putOutput(output, "timezone", result.Timezone)
 	putOutput(output, "cron", result.Cron)
+	putOutput(output, "catchup_policy", result.CatchupPolicy)
 	putOutput(output, "overlap_policy", result.OverlapPolicy)
-	if result.NextFireAtMS != 0 {
-		output["next_fire_at_ms"] = result.NextFireAtMS
-	}
-	if result.LastFireAtMS != 0 {
-		output["last_fire_at_ms"] = result.LastFireAtMS
-	}
-	if result.MaxFires != 0 {
-		output["max_fires"] = result.MaxFires
-	}
-	if result.EndAtMS != 0 {
-		output["end_at_ms"] = result.EndAtMS
-	}
-	if result.SkippedCount != 0 {
-		output["skipped_count"] = result.SkippedCount
-	}
+	putOutput(output, "last_overlap_target_id", result.LastOverlapTargetID)
+	putOutput(output, "last_overlap_reason", result.LastOverlapReason)
 	putOutput(output, "end_reason", result.EndReason)
+	putOutput(output, "last_planning_error", result.LastPlanningError)
+	putOutput(output, "last_target_id", result.LastTargetID)
+	putOptionalInt64(output, "every_ms", result.EveryMS)
+	putOptionalInt64(output, "overlap_retry_ms", result.OverlapRetryMS)
+	putOptionalInt64(output, "next_run_at_ms", result.NextRunAtMS)
+	putOptionalInt64(output, "last_fire_at_ms", result.LastFireAtMS)
+	putOptionalInt64(output, "max_fires", result.MaxFires)
+	putOptionalInt64(output, "end_at_ms", result.EndAtMS)
+	putOptionalInt64(output, "last_catchup_at_ms", result.LastCatchupAtMS)
+	if result.LastCatchupAtMS != nil {
+		output["last_coalesced_count"] = result.LastCoalescedCount
+	}
+	putOptionalInt64(output, "last_overlap_at_ms", result.LastOverlapAtMS)
+	putOptionalInt64(output, "last_skipped_at_ms", result.LastSkippedAtMS)
+	putOptionalInt64(output, "overlap_queued_due_at_ms", result.OverlapQueuedDueAtMS)
 	return output
 }
 
-func scheduleResultsOutput(results []ferricstore.ScheduleResult) any {
+func putOptionalInt64(output map[string]any, name string, value *int64) {
+	if value != nil {
+		output[name] = *value
+	}
+}
+
+func scheduleResultsOutput(results []ferricstore.ScheduleRecord) any {
 	output := make([]any, len(results))
 	for index := range results {
 		output[index] = scheduleResultOutput(&results[index])

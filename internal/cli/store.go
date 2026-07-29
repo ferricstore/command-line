@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 
+	"github.com/ferricstore/command-line/internal/commandsafety"
 	"github.com/spf13/cobra"
 )
 
@@ -56,6 +58,7 @@ func newStoreCommand(dependencies dependencies) *cobra.Command {
 }
 
 func newStoreRawCommand(dependencies dependencies) *cobra.Command {
+	var yes bool
 	spec := sdkCommandSpec{
 		name:  "command",
 		use:   "command <name> [args...]",
@@ -70,18 +73,48 @@ func newStoreRawCommand(dependencies dependencies) *cobra.Command {
 	}
 	command := newSDKCommand(dependencies, spec)
 	command.RunE = func(command *cobra.Command, args []string) error {
+		confirmed := yes
+		protocolArgs := append([]string(nil), args...)
+		candidate := make([]any, len(protocolArgs))
+		for index, argument := range protocolArgs {
+			candidate[index] = argument
+		}
+		sensitive := commandsafety.RequiresConfirmation(candidate)
+		if sensitive && !confirmed {
+			for index := len(protocolArgs) - 1; index >= 0; index-- {
+				if protocolArgs[index] == "--yes" {
+					confirmed = true
+					protocolArgs = append(protocolArgs[:index], protocolArgs[index+1:]...)
+					break
+				}
+			}
+		}
+		if len(protocolArgs) == 0 {
+			return errors.New("raw command name is required")
+		}
+		wireArgs := make([]any, 0, len(protocolArgs))
+		for index, argument := range protocolArgs {
+			if index == 0 {
+				argument = strings.ToUpper(argument)
+			}
+			wireArgs = append(wireArgs, argument)
+		}
+		if sensitive && !confirmed {
+			return errors.New(strings.ToLower(protocolArgs[0]) + " requires --yes")
+		}
 		actual := sdkCommandSpec{
-			wire:    []any{strings.ToUpper(args[0])},
+			wire:    wireArgs,
 			minArgs: 0,
-			maxArgs: -1,
+			maxArgs: 0,
 		}
 		delegate := newSDKCommand(dependencies, actual)
 		delegate.SetOut(command.OutOrStdout())
 		delegate.SetErr(command.ErrOrStderr())
 		delegate.SetIn(command.InOrStdin())
 		delegate.SetContext(command.Context())
-		return delegate.RunE(command, args[1:])
+		return delegate.RunE(command, nil)
 	}
+	command.Flags().BoolVar(&yes, "yes", false, "confirm a safety-sensitive raw command")
 	return command
 }
 

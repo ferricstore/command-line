@@ -78,3 +78,29 @@ func parseAssignments(values []string, noun string) (map[string]any, error) {
 	}
 	return result, nil
 }
+
+func parseStateMetaAssignments(values []string) (map[string]map[string]any, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	result := make(map[string]map[string]any)
+	for _, item := range values {
+		path, value, found := strings.Cut(item, "=")
+		state, name, separated := strings.Cut(strings.TrimSpace(path), ".")
+		state = strings.TrimSpace(state)
+		name = strings.TrimSpace(name)
+		if !found || !separated || state == "" || name == "" {
+			return nil, fmt.Errorf("invalid state metadata %q: use state.name=value", item)
+		}
+		metadata := result[state]
+		if metadata == nil {
+			metadata = make(map[string]any)
+			result[state] = metadata
+		}
+		if _, duplicate := metadata[name]; duplicate {
+			return nil, fmt.Errorf("duplicate state metadata %q", state+"."+name)
+		}
+		metadata[name] = value
+	}
+	return result, nil
+}

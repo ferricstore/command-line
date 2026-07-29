@@ -104,29 +104,65 @@ type flowReadFlags struct {
 	includeCold          bool
 	consistentProjection bool
 	attributes           []string
+	queryMode            bool
+	terminalOnlyEnabled  bool
+	attributesEnabled    bool
 }
 
-func (flags *flowReadFlags) add(command *cobra.Command, includeState bool) {
-	command.Flags().StringVar(&flags.partition, "partition", "", "partition key")
-	if includeState {
+type flowReadFlagSet struct {
+	state        bool
+	terminalOnly bool
+	attributes   bool
+}
+
+var fullFlowReadFlagSet = flowReadFlagSet{state: true, terminalOnly: true, attributes: true}
+
+func (flags *flowReadFlags) addQuery(command *cobra.Command, enabled flowReadFlagSet) {
+	flags.queryMode = true
+	flags.addCommon(command, enabled, "partition key (required)")
+}
+
+func (flags *flowReadFlags) addAdmin(command *cobra.Command, includeState bool) {
+	flags.addCommon(command, flowReadFlagSet{state: includeState, terminalOnly: true, attributes: true}, "partition key")
+	command.Flags().BoolVar(&flags.includeCold, "include-cold", false, "include retained cold records")
+	command.Flags().BoolVar(&flags.consistentProjection, "consistent", false, "wait for a consistent cold projection")
+}
+
+func (flags *flowReadFlags) addCommon(command *cobra.Command, enabled flowReadFlagSet, partitionHelp string) {
+	command.Flags().StringVar(&flags.partition, "partition", "", partitionHelp)
+	if enabled.state {
 		command.Flags().StringVar(&flags.state, "state", "", "filter by state")
 		_ = command.RegisterFlagCompletionFunc("state", completeCommonFlowState)
 	}
 	command.Flags().IntVar(&flags.limit, "limit", 100, "maximum records to return")
 	command.Flags().BoolVar(&flags.reverse, "reverse", false, "return newest records first")
-	command.Flags().BoolVar(&flags.terminalOnly, "terminal-only", false, "return only terminal records")
-	command.Flags().BoolVar(&flags.includeCold, "include-cold", false, "include retained cold records")
-	command.Flags().BoolVar(&flags.consistentProjection, "consistent", false, "wait for a consistent cold projection")
-	command.Flags().StringArrayVar(&flags.attributes, "attribute", nil, "filter attribute as name=value; repeatable")
+	if enabled.terminalOnly {
+		flags.terminalOnlyEnabled = true
+		command.Flags().BoolVar(&flags.terminalOnly, "terminal-only", false, "return only terminal records")
+	}
+	if enabled.attributes {
+		flags.attributesEnabled = true
+		command.Flags().StringArrayVar(&flags.attributes, "attribute", nil, "filter attribute as name=value; repeatable")
+	}
 }
 
 func (flags flowReadFlags) options(command *cobra.Command) (ferricstore.ReadOptions, error) {
 	if flags.limit <= 0 {
 		return ferricstore.ReadOptions{}, errors.New("limit must be greater than zero")
 	}
-	attributes, err := parseAssignments(flags.attributes, "attribute")
-	if err != nil {
-		return ferricstore.ReadOptions{}, err
+	if flags.queryMode && flags.limit > 100 {
+		return ferricstore.ReadOptions{}, errors.New("limit must not exceed 100 for workflow queries")
+	}
+	if flags.queryMode && strings.TrimSpace(flags.partition) == "" {
+		return ferricstore.ReadOptions{}, errors.New("partition is required; use --partition <key>")
+	}
+	var attributes map[string]any
+	if flags.attributesEnabled {
+		var err error
+		attributes, err = parseAssignments(flags.attributes, "attribute")
+		if err != nil {
+			return ferricstore.ReadOptions{}, err
+		}
 	}
 	options := ferricstore.ReadOptions{
 		PartitionKey: flags.partition,
@@ -137,13 +173,13 @@ func (flags flowReadFlags) options(command *cobra.Command) (ferricstore.ReadOpti
 	if command.Flags().Changed("reverse") {
 		options.Rev = ferricstore.Bool(flags.reverse)
 	}
-	if command.Flags().Changed("terminal-only") {
+	if flags.terminalOnlyEnabled && command.Flags().Changed("terminal-only") {
 		options.TerminalOnly = ferricstore.Bool(flags.terminalOnly)
 	}
-	if command.Flags().Changed("include-cold") {
+	if !flags.queryMode && command.Flags().Changed("include-cold") {
 		options.IncludeCold = ferricstore.Bool(flags.includeCold)
 	}
-	if command.Flags().Changed("consistent") {
+	if !flags.queryMode && command.Flags().Changed("consistent") {
 		options.ConsistentProjection = ferricstore.Bool(flags.consistentProjection)
 	}
 	return options, nil

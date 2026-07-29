@@ -3,6 +3,7 @@ package connection
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ferricstore/command-line/internal/credential"
@@ -129,6 +130,46 @@ func TestOpenSupportsMockEnterpriseMethods(t *testing.T) {
 				t.Fatal("provider did not receive the renewable Enterprise credential")
 			}
 		})
+	}
+}
+
+func TestOpenEphemeralRoutesCredentialsWithoutStores(t *testing.T) {
+	t.Parallel()
+
+	provider := &mockProvider{method: profile.AuthMethodPassword, client: &fakeClient{}}
+	service := NewService(nil, nil, provider)
+	wantProfile := profile.Profile{
+		URL: "ferrics://store.example.com:6388",
+		Authentication: profile.Authentication{
+			Method:   profile.AuthMethodPassword,
+			Username: "operator",
+		},
+	}
+
+	client, err := service.OpenEphemeral(context.Background(), EphemeralCredentials{
+		Profile: wantProfile,
+		Secret:  "environment-secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client != provider.client || provider.profile != wantProfile || provider.secret != "environment-secret" {
+		t.Fatalf("OpenEphemeral() client/profile/secret = %#v/%#v/%q", client, provider.profile, provider.secret)
+	}
+}
+
+func TestOpenEphemeralRejectsUnavailableAuthenticationMethod(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(nil, nil)
+	_, err := service.OpenEphemeral(context.Background(), EphemeralCredentials{
+		Profile: profile.Profile{
+			Authentication: profile.Authentication{Method: profile.AuthMethodEnterpriseAPIToken},
+		},
+		Secret: "machine-token",
+	})
+	if err == nil || !strings.Contains(err.Error(), "not available in this build") {
+		t.Fatalf("OpenEphemeral() error = %v", err)
 	}
 }
 

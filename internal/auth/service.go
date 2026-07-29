@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ferricstore/command-line/internal/credential"
 	"github.com/ferricstore/command-line/internal/profile"
 )
+
+const credentialRollbackTimeout = 5 * time.Second
 
 // LoginRequest contains provider-neutral login input.
 type LoginRequest struct {
@@ -105,19 +108,25 @@ func (s *Service) Login(ctx context.Context, request LoginRequest) (LoginResult,
 		return LoginResult{}, err
 	}
 	if err := s.profiles.Put(ctx, providerResult.Profile); err != nil {
-		rollbackCredential(ctx, s.credentials, request.ProfileName, previousSecret, previousErr == nil)
+		if rollbackErr := rollbackCredential(ctx, s.credentials, request.ProfileName, previousSecret, previousErr == nil); rollbackErr != nil {
+			return LoginResult{}, errors.Join(err, fmt.Errorf("rollback credential for profile %q: %w", request.ProfileName, rollbackErr))
+		}
 		return LoginResult{}, err
 	}
 	result.Stored = true
 	return result, nil
 }
 
-func rollbackCredential(ctx context.Context, store credential.Store, profileName, previous string, hadPrevious bool) {
+func rollbackCredential(ctx context.Context, store credential.Store, profileName, previous string, hadPrevious bool) error {
+	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), credentialRollbackTimeout)
+	defer cancel()
 	if hadPrevious {
-		_ = store.Put(ctx, profileName, previous)
-		return
+		return store.Put(cleanupContext, profileName, previous)
 	}
-	_ = store.Delete(ctx, profileName)
+	if err := store.Delete(cleanupContext, profileName); !errors.Is(err, credential.ErrNotFound) {
+		return err
+	}
+	return nil
 }
 
 // Logout removes a profile's local credential while preserving its metadata.

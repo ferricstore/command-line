@@ -33,28 +33,52 @@ service restores the previous keyring value or removes the newly written value.
 Login validates and saves authentication state; it does not keep a TCP socket
 or background CLI process alive. Each one-shot command performs this lifecycle:
 
-1. Load the selected non-secret profile.
-2. Read its secret from the operating-system keyring.
-3. Route the profile and secret to its connection provider.
+1. Resolve an explicit profile, direct environment credentials, or the
+   selected/default saved profile.
+2. Read the secret from the selected environment source or operating-system
+   keyring without combining the two.
+3. Route the non-secret connection metadata and secret to its provider.
 4. Open an SDK client, execute the command, and close the client.
 
 The selected connection is resolved in this order:
 
 1. Explicit `--profile` override.
-2. `FERRIC_PROFILE` environment variable.
-3. Connection selected by `ferric profile use`.
-4. The `default` connection for a new installation.
+2. Complete direct environment credentials.
+3. `FERRIC_PROFILE` environment variable.
+4. Connection selected by `ferric profile use`.
+5. The `default` connection for a new installation.
+
+## Environment Credentials
+
+OSS direct credentials require `FERRIC_URL`, `FERRIC_USERNAME`, and exactly one
+of `FERRIC_PASSWORD` or `FERRIC_PASSWORD_FILE`. Enterprise machine credentials
+require `FERRIC_CONTROL_URL`, `FERRIC_ORGANIZATION`, `FERRIC_CLUSTER`, and
+exactly one of `FERRIC_API_TOKEN` or `FERRIC_API_TOKEN_FILE`.
+
+Setting any variable in one set activates strict validation of that complete
+set. OSS and Enterprise environment variables cannot be combined, inline and
+file secrets cannot both be set, and missing values are errors. The CLI does
+not fall back to a profile for missing metadata or to the keyring for a missing
+secret. Secret files are read only when a network command or authentication
+status check resolves that source, are limited to 64 KiB, and may end with one
+newline.
+
+Environment credentials are ephemeral and are never persisted. The
+`ferric auth status` command verifies them through a real PING and reports
+`Source: environment`. Without an explicit `--profile`, `ferric auth logout`
+tells the caller to unset the environment variables and leaves saved
+credentials untouched.
 
 `ferric profile list` and `ferric profile show` display only non-secret
 metadata. Deleting a profile removes both its metadata and keyring credential.
 If metadata deletion fails, the CLI restores the credential.
 
 `ferric auth status` opens a real authenticated SDK connection and executes
-PING. A stored credential is not reported as authenticated merely because it
-exists locally. `ferric auth logout` removes the selected local keyring
-credential and keeps the profile metadata. OSS logout does not revoke or change
-the ACL password on the server; an administrator controls server-side password
-rotation and user removal.
+PING. A credential is not reported as authenticated merely because it exists
+locally. For a saved profile, `ferric auth logout` removes the selected local
+keyring credential and keeps the profile metadata. OSS logout does not revoke
+or change the ACL password on the server; an administrator controls server-side
+password rotation and user removal.
 
 For an OSS password profile, the SDK configures username/password
 authentication on every TCP connection it creates. A reconnect during the
@@ -98,6 +122,8 @@ Enterprise control plane.
 | SSO/device authorization | Mock only | Real integration |
 | API-token exchange | Mock only | Real integration |
 | Temporary cluster-token refresh | Mock only | Real integration |
+| Environment OSS credentials and secret files | Real protected OSS server | Optional |
+| Environment API-token routing | Mock only | Real integration |
 
 The OSS integration deliberately exercises username/password over ferric://.
 The CLI does not impose TLS policy; deployments choose between ferric:// and

@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 type outputFormat string
@@ -43,6 +42,9 @@ func writeResult(writer io.Writer, format outputFormat, value any) error {
 	if writer == nil {
 		return errors.New("output writer is not configured")
 	}
+	if err := validateExplicitOutputContract(reflect.ValueOf(value)); err != nil {
+		return err
+	}
 	value = normalizeOutputValue(reflect.ValueOf(value))
 	switch format {
 	case "", outputAuto:
@@ -57,6 +59,39 @@ func writeResult(writer io.Writer, format outputFormat, value any) error {
 	default:
 		return fmt.Errorf("unsupported output format %q", format)
 	}
+}
+
+func validateExplicitOutputContract(value reflect.Value) error {
+	if !value.IsValid() {
+		return nil
+	}
+	if value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return nil
+		}
+		return validateExplicitOutputContract(value.Elem())
+	}
+	if value.Type() == reflect.TypeOf([]byte(nil)) {
+		return nil
+	}
+	switch value.Kind() {
+	case reflect.Struct:
+		return fmt.Errorf("output type %s requires an explicit output contract", value.Type())
+	case reflect.Map:
+		iterator := value.MapRange()
+		for iterator.Next() {
+			if err := validateExplicitOutputContract(iterator.Value()); err != nil {
+				return err
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		for index := 0; index < value.Len(); index++ {
+			if err := validateExplicitOutputContract(value.Index(index)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func writeJSON(writer io.Writer, value any) error {
@@ -142,21 +177,6 @@ func normalizeOutputValue(value reflect.Value) any {
 		return string(value.Bytes())
 	}
 	switch value.Kind() {
-	case reflect.Struct:
-		result := make(map[string]any)
-		typeOfValue := value.Type()
-		for index := 0; index < value.NumField(); index++ {
-			field := typeOfValue.Field(index)
-			if !field.IsExported() {
-				continue
-			}
-			name := outputFieldName(field)
-			if name == "-" {
-				continue
-			}
-			result[name] = normalizeOutputValue(value.Field(index))
-		}
-		return result
 	case reflect.Map:
 		result := make(map[string]any, value.Len())
 		iterator := value.MapRange()
@@ -182,74 +202,5 @@ func normalizeOutputValue(value reflect.Value) any {
 		return value.Float()
 	default:
 		return value.Interface()
-	}
-}
-
-func outputFieldName(field reflect.StructField) string {
-	if tag := strings.Split(field.Tag.Get("json"), ",")[0]; tag != "" {
-		return tag
-	}
-	return snakeCase(field.Name)
-}
-
-func snakeCase(value string) string {
-	var result []rune
-	runes := []rune(value)
-	for index, current := range runes {
-		if unicode.IsUpper(current) {
-			if index > 0 && (unicode.IsLower(runes[index-1]) ||
-				(index+1 < len(runes) && unicode.IsLower(runes[index+1]))) {
-				result = append(result, '_')
-			}
-			current = unicode.ToLower(current)
-		}
-		result = append(result, current)
-	}
-	return string(result)
-}
-
-// compactOutput omits zero-valued SDK response fields and transport-level Raw
-// maps. It keeps operator output focused while preserving all populated fields.
-func compactOutput(value any) any {
-	return compactOutputValue(reflect.ValueOf(value))
-}
-
-func compactOutputValue(value reflect.Value) any {
-	if !value.IsValid() {
-		return nil
-	}
-	if value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
-		if value.IsNil() {
-			return nil
-		}
-		return compactOutputValue(value.Elem())
-	}
-	if value.Type() == reflect.TypeOf([]byte(nil)) {
-		return string(value.Bytes())
-	}
-	switch value.Kind() {
-	case reflect.Struct:
-		result := make(map[string]any)
-		typeOfValue := value.Type()
-		for index := 0; index < value.NumField(); index++ {
-			field := typeOfValue.Field(index)
-			fieldValue := value.Field(index)
-			name := outputFieldName(field)
-			if !field.IsExported() || name == "-" || name == "raw" || fieldValue.IsZero() {
-				continue
-			}
-			result[name] = compactOutputValue(fieldValue)
-		}
-		return result
-	case reflect.Slice, reflect.Array:
-		result := make([]any, value.Len())
-		for index := 0; index < value.Len(); index++ {
-			result[index] = compactOutputValue(value.Index(index))
-		}
-		return result
-	case reflect.Map:
-		return normalizeOutputValue(value)
-	default:
-		return normalizeOutputValue(value)
 	}
 }
