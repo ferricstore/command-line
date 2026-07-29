@@ -13,6 +13,20 @@ import (
 
 type clientOperation func(context.Context, connection.Client, profile.Profile) (any, error)
 
+type activeConnectionSource string
+
+const (
+	activeConnectionProfile     activeConnectionSource = "profile"
+	activeConnectionEnvironment activeConnectionSource = "environment"
+)
+
+type activeConnection struct {
+	client      connection.Client
+	profile     profile.Profile
+	profileName string
+	source      activeConnectionSource
+}
+
 func runNetworkCommand(command *cobra.Command, dependencies dependencies, name string, operation clientOperation) error {
 	if dependencies.connections == nil {
 		return errors.New("connection service is not configured")
@@ -28,22 +42,80 @@ func runNetworkCommand(command *cobra.Command, dependencies dependencies, name s
 	if timeout <= 0 {
 		return errors.New("timeout must be greater than zero")
 	}
-	profileName, err := selectedProfile(command, dependencies)
-	if err != nil {
-		return err
-	}
 	ctx, cancel := context.WithTimeout(command.Context(), timeout)
 	defer cancel()
-	client, storedProfile, err := dependencies.connections.Open(ctx, profileName)
+	active, err := openActiveConnection(ctx, command, dependencies)
 	if err != nil {
 		return err
 	}
-	result, operationErr := operation(ctx, client, storedProfile)
-	closeErr := client.Close()
+	result, operationErr := operation(ctx, active.client, active.profile)
+	closeErr := active.client.Close()
 	if err := errors.Join(operationErr, closeErr); err != nil {
-		return fmt.Errorf("%s using profile %q: %w", name, profileName, err)
+		return fmt.Errorf("%s using %s: %w", name, active.description(), err)
 	}
 	return writeResult(command.OutOrStdout(), format, result)
+}
+
+func openActiveConnection(
+	ctx context.Context,
+	command *cobra.Command,
+	dependencies dependencies,
+) (activeConnection, error) {
+	profileName, explicit, err := explicitProfile(command)
+	if err != nil {
+		return activeConnection{}, err
+	}
+	if explicit {
+		return openSavedConnection(ctx, dependencies, profileName)
+	}
+
+	if dependencies.environment != nil {
+		credentials, present, err := dependencies.environment.Resolve(ctx)
+		if err != nil {
+			return activeConnection{}, fmt.Errorf("resolve environment credentials: %w", err)
+		}
+		if present {
+			client, err := dependencies.connections.OpenEphemeral(ctx, credentials)
+			if err != nil {
+				return activeConnection{}, fmt.Errorf("connect using environment credentials: %w", err)
+			}
+			return activeConnection{
+				client:  client,
+				profile: credentials.Profile,
+				source:  activeConnectionEnvironment,
+			}, nil
+		}
+	}
+
+	profileName, err = selectedProfile(command, dependencies)
+	if err != nil {
+		return activeConnection{}, err
+	}
+	return openSavedConnection(ctx, dependencies, profileName)
+}
+
+func openSavedConnection(
+	ctx context.Context,
+	dependencies dependencies,
+	profileName string,
+) (activeConnection, error) {
+	client, storedProfile, err := dependencies.connections.Open(ctx, profileName)
+	if err != nil {
+		return activeConnection{}, err
+	}
+	return activeConnection{
+		client:      client,
+		profile:     storedProfile,
+		profileName: profileName,
+		source:      activeConnectionProfile,
+	}, nil
+}
+
+func (c activeConnection) description() string {
+	if c.source == activeConnectionEnvironment {
+		return "environment credentials"
+	}
+	return fmt.Sprintf("profile %q", c.profileName)
 }
 
 func runtimeTimeout(dependencies dependencies) time.Duration {

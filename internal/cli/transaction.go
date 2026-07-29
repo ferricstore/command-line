@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/ferricstore/command-line/internal/commandsafety"
 	"github.com/ferricstore/command-line/internal/connection"
 	"github.com/ferricstore/command-line/internal/profile"
 	ferricstore "github.com/ferricstore/ferricstore-go"
@@ -25,6 +26,7 @@ type transactionStarter interface {
 func newStoreTransactionCommand(dependencies dependencies) *cobra.Command {
 	var keys []string
 	var watchedKeys []string
+	var yes bool
 	command := &cobra.Command{
 		Use:   "transaction <file>",
 		Short: "Execute a JSON batch atomically",
@@ -32,7 +34,8 @@ func newStoreTransactionCommand(dependencies dependencies) *cobra.Command {
 			"Use - to read stdin. In cluster mode, provide every routing key with --key; all keys must share a slot. " +
 			"Use --watch for an optimistic transaction that aborts if watched keys change.",
 		Example: "  ferric store transaction commands.json\n" +
-			"  printf '%s' '[[\"SET\",\"counter\",\"1\"],[\"INCR\",\"counter\"]]' | ferric store transaction - --key counter",
+			"  printf '%s' '[[\"SET\",\"counter\",\"1\"],[\"INCR\",\"counter\"]]' | ferric store transaction - --key counter\n" +
+			"  ferric store transaction admin-commands.json --yes",
 		GroupID: storeEscapeHatchGroup,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -42,6 +45,9 @@ func newStoreTransactionCommand(dependencies dependencies) *cobra.Command {
 			commands, err := readTransactionCommands(command, args[0])
 			if err != nil {
 				return err
+			}
+			if index, sensitive := commandsafety.FirstRequiringConfirmation(commands); sensitive && !yes {
+				return fmt.Errorf("transaction command %d requires --yes", index+1)
 			}
 			return runNetworkCommand(command, dependencies, "execute transaction", func(ctx context.Context, client connection.Client, _ profile.Profile) (any, error) {
 				starter, err := requireClientCapability[transactionStarter](client, "SDK transactions")
@@ -75,6 +81,7 @@ func newStoreTransactionCommand(dependencies dependencies) *cobra.Command {
 	}
 	command.Flags().StringSliceVar(&keys, "key", nil, "routing key for cluster slot selection; repeatable")
 	command.Flags().StringSliceVar(&watchedKeys, "watch", nil, "abort if this key changes before EXEC; repeatable")
+	command.Flags().BoolVar(&yes, "yes", false, "confirm safety-sensitive commands in the transaction")
 	return command
 }
 

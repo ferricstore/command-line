@@ -15,6 +15,7 @@ type dependencies struct {
 	connections    *connection.Service
 	profiles       profile.Manager
 	credentials    credential.Store
+	environment    connection.CredentialSource
 	passwordReader passwordReader
 	runtime        *runtimeOptions
 }
@@ -34,7 +35,7 @@ func WithLoginService(service *auth.Service) Option {
 	}
 }
 
-// WithConnectionService replaces saved-profile connection resolution.
+// WithConnectionService replaces authenticated connection resolution.
 func WithConnectionService(service *connection.Service) Option {
 	return func(dependencies *dependencies) {
 		dependencies.connections = service
@@ -55,6 +56,13 @@ func WithCredentialStore(store credential.Store) Option {
 	}
 }
 
+// WithEnvironmentCredentialSource replaces ephemeral environment resolution.
+func WithEnvironmentCredentialSource(source connection.CredentialSource) Option {
+	return func(dependencies *dependencies) {
+		dependencies.environment = source
+	}
+}
+
 // WithPasswordReader replaces interactive password input.
 func WithPasswordReader(reader passwordReader) Option {
 	return func(dependencies *dependencies) {
@@ -65,25 +73,34 @@ func WithPasswordReader(reader passwordReader) Option {
 func defaultDependencies() dependencies {
 	profiles := profile.NewDefaultFileStore()
 	credentials := credential.NewKeyringStore()
-	login := auth.NewService(
-		profiles,
-		credentials,
-		auth.NewPasswordProvider(ferric.PasswordValidator{}),
-	)
-	connections := connection.NewService(
-		profiles,
-		credentials,
-		connection.NewPasswordProvider(ferric.PasswordClientFactory{}),
-	)
 	return dependencies{
-		login:          login,
-		connections:    connections,
 		profiles:       profiles,
 		credentials:    credentials,
+		environment:    connection.NewEnvironmentCredentialSource(),
 		passwordReader: terminalPasswordReader{},
 		runtime: &runtimeOptions{
 			timeout: 10 * time.Second,
 			output:  outputAuto,
 		},
+	}
+}
+
+// finalize builds default services only after all dependency options have been
+// applied. This keeps the profile and credential stores used by commands,
+// authentication, and connections on one coherent dependency graph.
+func (d *dependencies) finalize() {
+	if d.login == nil {
+		d.login = auth.NewService(
+			d.profiles,
+			d.credentials,
+			auth.NewPasswordProvider(ferric.PasswordValidator{}),
+		)
+	}
+	if d.connections == nil {
+		d.connections = connection.NewService(
+			d.profiles,
+			d.credentials,
+			connection.NewPasswordProvider(ferric.PasswordClientFactory{}),
+		)
 	}
 }

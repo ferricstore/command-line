@@ -61,7 +61,7 @@ func newAuthCommand(dependencies dependencies) *cobra.Command {
 func newAuthStatusCommand(dependencies dependencies) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "status",
-		Short:   "Verify the saved authentication",
+		Short:   "Verify the active authentication",
 		Example: "  ferric auth status\n  ferric --output json auth status",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
@@ -72,18 +72,14 @@ func newAuthStatusCommand(dependencies dependencies) *cobra.Command {
 			if timeout <= 0 {
 				return errors.New("timeout must be greater than zero")
 			}
-			profileName, err := selectedProfile(command, dependencies)
-			if err != nil {
-				return err
-			}
 			ctx, cancel := context.WithTimeout(command.Context(), timeout)
 			defer cancel()
-			client, storedProfile, err := dependencies.connections.Open(ctx, profileName)
+			active, err := openActiveConnection(ctx, command, dependencies)
 			if err != nil {
 				return fmt.Errorf("authentication status: %w", err)
 			}
-			_, pingErr := client.Ping(ctx)
-			closeErr := client.Close()
+			_, pingErr := active.client.Ping(ctx)
+			closeErr := active.client.Close()
 			if err := errors.Join(pingErr, closeErr); err != nil {
 				return fmt.Errorf("authentication status: %w", err)
 			}
@@ -91,19 +87,27 @@ func newAuthStatusCommand(dependencies dependencies) *cobra.Command {
 			if runtimeOutput(dependencies) != outputAuto {
 				return writeResult(command.OutOrStdout(), runtimeOutput(dependencies), map[string]any{
 					"authenticated": true,
-					"user":          storedProfile.Authentication.Username,
-					"endpoint":      profileEndpoint(storedProfile),
-					"method":        storedProfile.Authentication.Method,
+					"source":        active.source,
+					"user":          active.profile.Authentication.Username,
+					"endpoint":      profileEndpoint(active.profile),
+					"method":        active.profile.Authentication.Method,
 				})
 			}
-			return writeAuthenticationStatus(command, storedProfile)
+			return writeAuthenticationStatus(command, active.profile, active.source)
 		},
 	}
 	return command
 }
 
-func writeAuthenticationStatus(command *cobra.Command, storedProfile profile.Profile) error {
+func writeAuthenticationStatus(
+	command *cobra.Command,
+	storedProfile profile.Profile,
+	source activeConnectionSource,
+) error {
 	if _, err := fmt.Fprintln(command.OutOrStdout(), "Authenticated"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(command.OutOrStdout(), "Source: %s\n", source); err != nil {
 		return err
 	}
 	if username := storedProfile.Authentication.Username; username != "" {
@@ -124,12 +128,23 @@ func newLogoutCommand(dependencies dependencies) *cobra.Command {
 	return &cobra.Command{
 		Use:     "logout",
 		Short:   "Remove the locally stored credential",
-		Long:    "Remove the selected profile's password or token from the operating-system keystore without deleting profile metadata.",
+		Long:    "Remove the selected profile's password or token from the operating-system keystore without deleting profile metadata. Environment credentials must be unset by the caller.",
 		Example: "  ferric auth logout",
 		Args:    cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			if dependencies.login == nil {
 				return errors.New("authentication service is not configured")
+			}
+			_, explicit, err := explicitProfile(command)
+			if err != nil {
+				return err
+			}
+			if !explicit && dependencies.environment != nil && dependencies.environment.Configured() {
+				_, err := fmt.Fprintln(
+					command.OutOrStdout(),
+					"Environment credentials cannot be logged out; unset the FERRIC_* credential variables.",
+				)
+				return err
 			}
 			profileName, err := selectedProfile(command, dependencies)
 			if err != nil {

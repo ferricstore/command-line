@@ -89,6 +89,53 @@ type mockProvider struct {
 	err     error
 }
 
+type rollbackCredentialStore struct {
+	values      map[string]string
+	putCalls    int
+	rollbackErr error
+}
+
+func (s *rollbackCredentialStore) Put(ctx context.Context, name, secret string) error {
+	s.putCalls++
+	if s.putCalls > 1 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if s.rollbackErr != nil {
+			return s.rollbackErr
+		}
+	}
+	s.values[name] = secret
+	return nil
+}
+
+func (s *rollbackCredentialStore) Get(_ context.Context, name string) (string, error) {
+	value, ok := s.values[name]
+	if !ok {
+		return "", credential.ErrNotFound
+	}
+	return value, nil
+}
+
+func (s *rollbackCredentialStore) Delete(_ context.Context, name string) error {
+	delete(s.values, name)
+	return nil
+}
+
+type cancelingProfileStore struct {
+	cancel func()
+	err    error
+}
+
+func (s cancelingProfileStore) Put(_ context.Context, _ profile.Profile) error {
+	s.cancel()
+	return s.err
+}
+
+func (cancelingProfileStore) Get(_ context.Context, _ string) (profile.Profile, error) {
+	return profile.Profile{}, profile.ErrNotFound
+}
+
 func (p *mockProvider) Method() profile.AuthMethod {
 	return p.method
 }
@@ -246,6 +293,56 @@ func TestProfileFailureRestoresPreviousCredential(t *testing.T) {
 	}
 	if got := credentials.values["production"]; got != "previous" {
 		t.Fatalf("credential after rollback = %q, want previous", got)
+	}
+}
+
+func TestProfileFailureReportsCredentialRollbackFailure(t *testing.T) {
+	t.Parallel()
+
+	profileErr := errors.New("profile write failed")
+	rollbackErr := errors.New("credential rollback failed")
+	profiles := newMemoryProfileStore()
+	profiles.putErr = profileErr
+	credentials := &rollbackCredentialStore{
+		values:      map[string]string{"production": "previous"},
+		rollbackErr: rollbackErr,
+	}
+	service := NewService(profiles, credentials, NewPasswordProvider(&fakeValidator{}))
+	_, err := service.Login(context.Background(), LoginRequest{
+		ProfileName: "production",
+		URL:         "ferric://store.example.com:6388",
+		Username:    "operator",
+		Secret:      "replacement",
+		Store:       true,
+	})
+	if !errors.Is(err, profileErr) || !errors.Is(err, rollbackErr) {
+		t.Fatalf("Login() error = %v, want profile and rollback errors", err)
+	}
+}
+
+func TestProfileFailureRollsBackWithCanceledRequestContext(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	profileErr := errors.New("profile write failed")
+	credentials := &rollbackCredentialStore{values: map[string]string{"production": "previous"}}
+	service := NewService(
+		cancelingProfileStore{cancel: cancel, err: profileErr},
+		credentials,
+		NewPasswordProvider(&fakeValidator{}),
+	)
+	_, err := service.Login(ctx, LoginRequest{
+		ProfileName: "production",
+		URL:         "ferric://store.example.com:6388",
+		Username:    "operator",
+		Secret:      "replacement",
+		Store:       true,
+	})
+	if !errors.Is(err, profileErr) {
+		t.Fatalf("Login() error = %v, want profile error", err)
+	}
+	if got := credentials.values["production"]; got != "previous" {
+		t.Fatalf("credential after canceled-context rollback = %q, want previous", got)
 	}
 }
 

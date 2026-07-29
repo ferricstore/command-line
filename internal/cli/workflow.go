@@ -34,6 +34,7 @@ func newWorkflowCommand(dependencies dependencies) *cobra.Command {
 		newWorkflowStartCommand(dependencies),
 		newFlowDescribeCommand(dependencies, "workflow"),
 		newFlowListCommand(dependencies, "workflow"),
+		newWorkflowQueryCommand(dependencies),
 		newWorkflowSearchCommand(dependencies),
 		newWorkflowClaimCommand(dependencies),
 		newWorkflowSignalCommand(dependencies),
@@ -140,23 +141,43 @@ func newWorkflowSearchCommand(dependencies dependencies) *cobra.Command {
 	var limit int
 	var reverse bool
 	var terminalOnly bool
-	var includeCold bool
-	var consistent bool
 	var attributes []string
+	var stateMeta []string
 	command := &cobra.Command{
 		Use:   "search",
 		Short: "Search workflow executions",
-		Long:  "Search bounded Flow indexes by type, state, partition, time-independent attributes, or terminal status.",
-		Example: "  ferric workflow search --type order --state failed --limit 20\n" +
-			"  ferric workflow search --type order --partition tenant-a --attribute region=eu --reverse",
+		Long:  "Search bounded FQL indexes within one partition using at least one attribute or per-state metadata predicate.",
+		Example: "  ferric workflow search --type order --partition tenant-a --attribute region=eu --state failed --limit 20\n" +
+			"  ferric workflow search --type order --partition tenant-a --state-meta review.approver=ada --reverse",
 		Args: cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			if limit <= 0 {
 				return errors.New("limit must be greater than zero")
 			}
+			if limit > 100 {
+				return errors.New("limit must not exceed 100 for workflow queries")
+			}
+			if strings.TrimSpace(partition) == "" {
+				return errors.New("partition is required; use --partition <key>")
+			}
 			filters, err := parseAssignments(attributes, "attribute")
 			if err != nil {
 				return err
+			}
+			stateMetaFilters, err := parseStateMetaAssignments(stateMeta)
+			if err != nil {
+				return err
+			}
+			if len(filters) == 0 && len(stateMetaFilters) == 0 {
+				return errors.New("search requires an attribute or state metadata predicate")
+			}
+			if len(stateMetaFilters) > 0 && (strings.TrimSpace(flowType) == "" || strings.EqualFold(strings.TrimSpace(flowType), "any")) {
+				return errors.New("state metadata predicates require a concrete workflow type; use --type <workflow-type>")
+			}
+			if terminalOnly && command.Flags().Changed("terminal-only") {
+				if err := validateTerminalQueryState(state); err != nil {
+					return err
+				}
 			}
 			options := ferricstore.SearchOptions{
 				Type:         flowType,
@@ -164,18 +185,13 @@ func newWorkflowSearchCommand(dependencies dependencies) *cobra.Command {
 				PartitionKey: partition,
 				Count:        ferricstore.Int(limit),
 				Attributes:   filters,
+				StateMeta:    stateMetaFilters,
 			}
 			if command.Flags().Changed("reverse") {
 				options.Rev = ferricstore.Bool(reverse)
 			}
 			if command.Flags().Changed("terminal-only") {
 				options.TerminalOnly = ferricstore.Bool(terminalOnly)
-			}
-			if command.Flags().Changed("include-cold") {
-				options.IncludeCold = ferricstore.Bool(includeCold)
-			}
-			if command.Flags().Changed("consistent") {
-				options.ConsistentProjection = ferricstore.Bool(consistent)
 			}
 			return runNetworkCommand(command, dependencies, "search workflows", func(ctx context.Context, client connection.Client, _ profile.Profile) (any, error) {
 				searcher, err := requireClientCapability[flowSearcher](client, "FerricFlow search")
@@ -189,13 +205,12 @@ func newWorkflowSearchCommand(dependencies dependencies) *cobra.Command {
 	}
 	command.Flags().StringVar(&flowType, "type", "", "filter by workflow type")
 	command.Flags().StringVar(&state, "state", "", "filter by state")
-	command.Flags().StringVar(&partition, "partition", "", "partition key")
+	command.Flags().StringVar(&partition, "partition", "", "partition key (required)")
 	command.Flags().IntVar(&limit, "limit", 100, "maximum records to return")
 	command.Flags().BoolVar(&reverse, "reverse", false, "return newest records first")
 	command.Flags().BoolVar(&terminalOnly, "terminal-only", false, "return only terminal records")
-	command.Flags().BoolVar(&includeCold, "include-cold", false, "include retained cold records")
-	command.Flags().BoolVar(&consistent, "consistent", false, "wait for a consistent cold projection")
 	command.Flags().StringArrayVar(&attributes, "attribute", nil, "filter attribute as name=value; repeatable")
+	command.Flags().StringArrayVar(&stateMeta, "state-meta", nil, "filter state metadata as state.name=value; repeatable")
 	_ = command.RegisterFlagCompletionFunc("state", completeCommonFlowState)
 	return command
 }
@@ -428,8 +443,9 @@ type flowByParentReader interface {
 
 func newWorkflowChildrenCommand(dependencies dependencies) *cobra.Command {
 	return newWorkflowIndexCommand(dependencies, workflowIndexSpec{
-		use: "children <id>", short: "List child workflows", example: "  ferric workflow children order-42",
+		use: "children <id>", short: "List child workflows", example: "  ferric workflow children order-42 --partition tenant-a",
 		operation: "list child workflows",
+		readFlags: flowReadFlagSet{state: true},
 		read: func(ctx context.Context, client connection.Client, key string, options ferricstore.ReadOptions) ([]ferricstore.FlowRecord, error) {
 			reader, err := requireClientCapability[flowByParentReader](client, "FerricFlow parent lineage")
 			if err != nil {
@@ -446,8 +462,9 @@ type flowByRootReader interface {
 
 func newWorkflowByRootCommand(dependencies dependencies) *cobra.Command {
 	return newWorkflowIndexCommand(dependencies, workflowIndexSpec{
-		use: "by-root <id>", short: "List workflows in a root execution tree", example: "  ferric workflow by-root order-42",
+		use: "by-root <id>", short: "List workflows in a root execution tree", example: "  ferric workflow by-root order-42 --partition tenant-a",
 		operation: "list workflows by root",
+		readFlags: flowReadFlagSet{state: true},
 		read: func(ctx context.Context, client connection.Client, key string, options ferricstore.ReadOptions) ([]ferricstore.FlowRecord, error) {
 			reader, err := requireClientCapability[flowByRootReader](client, "FerricFlow root lineage")
 			if err != nil {
@@ -464,8 +481,9 @@ type flowByCorrelationReader interface {
 
 func newWorkflowByCorrelationCommand(dependencies dependencies) *cobra.Command {
 	return newWorkflowIndexCommand(dependencies, workflowIndexSpec{
-		use: "by-correlation <id>", short: "List workflows by correlation ID", example: "  ferric workflow by-correlation checkout-42",
+		use: "by-correlation <id>", short: "List workflows by correlation ID", example: "  ferric workflow by-correlation checkout-42 --partition tenant-a",
 		operation: "list workflows by correlation",
+		readFlags: flowReadFlagSet{state: true},
 		read: func(ctx context.Context, client connection.Client, key string, options ferricstore.ReadOptions) ([]ferricstore.FlowRecord, error) {
 			reader, err := requireClientCapability[flowByCorrelationReader](client, "FerricFlow correlation reads")
 			if err != nil {
@@ -481,6 +499,8 @@ type workflowIndexSpec struct {
 	short     string
 	example   string
 	operation string
+	readFlags flowReadFlagSet
+	validate  func(string, ferricstore.ReadOptions) error
 	read      func(context.Context, connection.Client, string, ferricstore.ReadOptions) ([]ferricstore.FlowRecord, error)
 }
 
@@ -496,13 +516,18 @@ func newWorkflowIndexCommand(dependencies dependencies, spec workflowIndexSpec) 
 			if err != nil {
 				return err
 			}
+			if spec.validate != nil {
+				if err := spec.validate(args[0], options); err != nil {
+					return err
+				}
+			}
 			return runNetworkCommand(command, dependencies, spec.operation, func(ctx context.Context, client connection.Client, _ profile.Profile) (any, error) {
 				records, err := spec.read(ctx, client, args[0], options)
 				return flowRecordsOutput(records), err
 			})
 		},
 	}
-	flags.add(command, true)
+	flags.addQuery(command, spec.readFlags)
 	return command
 }
 
@@ -512,8 +537,15 @@ type flowTerminalsReader interface {
 
 func newWorkflowTerminalsCommand(dependencies dependencies) *cobra.Command {
 	return newWorkflowIndexCommand(dependencies, workflowIndexSpec{
-		use: "terminals <type>", short: "List terminal workflow executions", example: "  ferric workflow terminals order --limit 20 --reverse",
+		use: "terminals <type>", short: "List terminal workflow executions", example: "  ferric workflow terminals order --partition tenant-a --limit 20 --reverse",
 		operation: "list terminal workflows",
+		readFlags: flowReadFlagSet{state: true},
+		validate: func(flowType string, options ferricstore.ReadOptions) error {
+			if flowType == "any" {
+				return errors.New("terminal queries require a concrete workflow type")
+			}
+			return validateTerminalQueryState(options.State)
+		},
 		read: func(ctx context.Context, client connection.Client, key string, options ferricstore.ReadOptions) ([]ferricstore.FlowRecord, error) {
 			reader, err := requireClientCapability[flowTerminalsReader](client, "FerricFlow terminal reads")
 			if err != nil {
@@ -530,8 +562,10 @@ type flowFailuresReader interface {
 
 func newWorkflowFailuresCommand(dependencies dependencies) *cobra.Command {
 	return newWorkflowIndexCommand(dependencies, workflowIndexSpec{
-		use: "failures <type>", short: "List failed workflow executions", example: "  ferric workflow failures order --limit 20 --reverse",
+		use: "failures <type>", short: "List failed workflow executions", example: "  ferric workflow failures order --partition tenant-a --limit 20 --reverse",
 		operation: "list failed workflows",
+		readFlags: flowReadFlagSet{attributes: true},
+		validate:  validateFlowListQuery,
 		read: func(ctx context.Context, client connection.Client, key string, options ferricstore.ReadOptions) ([]ferricstore.FlowRecord, error) {
 			reader, err := requireClientCapability[flowFailuresReader](client, "FerricFlow failure reads")
 			if err != nil {
@@ -553,11 +587,20 @@ func newWorkflowStuckCommand(dependencies dependencies) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "stuck <type>",
 		Short:   "List workflows that have remained active too long",
-		Example: "  ferric workflow stuck order --older-than 15m --limit 20",
+		Example: "  ferric workflow stuck order --partition tenant-a --older-than 15m --limit 20",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
+			if strings.TrimSpace(partition) == "" {
+				return errors.New("partition is required; use --partition <key>")
+			}
 			if limit <= 0 {
 				return errors.New("limit must be greater than zero")
+			}
+			if limit > 100 {
+				return errors.New("limit must not exceed 100 for workflow queries")
+			}
+			if args[0] == "any" {
+				return errors.New("stuck queries require a concrete workflow type")
 			}
 			var olderThanMS *int64
 			if command.Flags().Changed("older-than") {
@@ -577,7 +620,7 @@ func newWorkflowStuckCommand(dependencies dependencies) *cobra.Command {
 			})
 		},
 	}
-	command.Flags().StringVar(&partition, "partition", "", "partition key")
+	command.Flags().StringVar(&partition, "partition", "", "partition key (required)")
 	command.Flags().IntVar(&limit, "limit", 100, "maximum records to return")
 	command.Flags().DurationVar(&olderThan, "older-than", 0, "minimum active duration")
 	return command

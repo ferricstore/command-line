@@ -36,7 +36,11 @@ func TestIntegrationOSSBootstrap(t *testing.T) {
 			ferricstore.WithNativeCredentials(username, password),
 		),
 	)
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close bootstrap client: %v", err)
+		}
+	}()
 	if pong, err := client.Ping(ctx); err != nil || pong != "PONG" {
 		t.Fatalf("authenticated bootstrap PING = %q, %v (SETUSER error %v)", pong, err, setUserErr)
 	}

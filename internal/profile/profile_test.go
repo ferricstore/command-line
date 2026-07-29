@@ -4,10 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/gofrs/flock"
 )
 
 func TestFileStoreRoundTrip(t *testing.T) {
@@ -153,5 +158,63 @@ func TestFileStoreCurrentWithoutProfiles(t *testing.T) {
 	}
 	if err := store.Delete(context.Background(), "missing"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Delete() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestFileStoreConcurrentInstancesDoNotLoseProfiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	const writers = 64
+	start := make(chan struct{})
+	errorsByWriter := make(chan error, writers)
+	var group sync.WaitGroup
+	group.Add(writers)
+	for index := 0; index < writers; index++ {
+		index := index
+		go func() {
+			defer group.Done()
+			<-start
+			store := NewFileStore(path)
+			errorsByWriter <- store.Put(context.Background(), Profile{
+				Name: fmt.Sprintf("profile-%02d", index),
+				URL:  fmt.Sprintf("ferric://node-%02d:6388", index),
+			})
+		}()
+	}
+	close(start)
+	group.Wait()
+	close(errorsByWriter)
+	for err := range errorsByWriter {
+		if err != nil {
+			t.Fatalf("concurrent Put() error = %v", err)
+		}
+	}
+
+	profiles, err := NewFileStore(path).List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profiles) != writers {
+		t.Fatalf("List() returned %d profiles after %d concurrent writes", len(profiles), writers)
+	}
+}
+
+func TestFileStoreMutationLockRespectsContext(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "config.json")
+	fileLock := flock.New(path + ".lock")
+	if err := fileLock.Lock(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := fileLock.Unlock(); err != nil {
+			t.Errorf("Unlock() error = %v", err)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := NewFileStore(path).Put(ctx, Profile{Name: "production"})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Put() error = %v, want context deadline", err)
 	}
 }

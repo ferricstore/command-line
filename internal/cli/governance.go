@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ferricstore/command-line/internal/connection"
+	"github.com/ferricstore/command-line/internal/outputcontract"
 	"github.com/ferricstore/command-line/internal/profile"
 	ferricstore "github.com/ferricstore/ferricstore-go"
 	"github.com/spf13/cobra"
@@ -63,7 +64,7 @@ func newGovernanceOverviewCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := reader.GovernanceOverview(ctx, options)
-				return compactOutput(result), err
+				return outputcontract.GovernanceOverview(result), err
 			})
 		},
 	}
@@ -165,7 +166,7 @@ func newApprovalRequestCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := requester.ApprovalRequest(ctx, args[0], options)
-				return compactOutput(result), err
+				return outputcontract.Approval(&result), err
 			})
 		},
 	}
@@ -199,7 +200,7 @@ func newApprovalGetCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := getter.ApprovalGet(ctx, args[0])
-				return compactOutput(result), err
+				return outputcontract.Approval(result), err
 			})
 		},
 	}
@@ -232,7 +233,7 @@ func newApprovalListCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := lister.ApprovalList(ctx, options)
-				return compactOutput(result), err
+				return outputcontract.ApprovalList(result), err
 			})
 		},
 	}
@@ -278,14 +279,14 @@ func newApprovalDecisionCommand(dependencies dependencies, approve bool) *cobra.
 						return nil, err
 					}
 					result, err := operator.ApprovalApprove(ctx, args[0], approver, reason, nil)
-					return compactOutput(result), err
+					return outputcontract.Approval(&result), err
 				}
 				operator, err := requireClientCapability[approvalRejecter](client, "approval decisions")
 				if err != nil {
 					return nil, err
 				}
 				result, err := operator.ApprovalReject(ctx, args[0], approver, reason, nil)
-				return compactOutput(result), err
+				return outputcontract.Approval(&result), err
 			})
 		},
 	}
@@ -331,7 +332,7 @@ func newCircuitGetCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := getter.CircuitGet(ctx, args[0])
-				return compactOutput(result), err
+				return outputcontract.Circuit(result), err
 			})
 		},
 	}
@@ -415,7 +416,7 @@ func newCircuitOpenCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := opener.CircuitOpenWithOptions(ctx, args[0], options)
-				return compactOutput(result), err
+				return outputcontract.Circuit(&result), err
 			})
 		},
 	}
@@ -454,7 +455,7 @@ func newCircuitCloseCommand(dependencies dependencies) *cobra.Command {
 					return nil, err
 				}
 				result, err := closer.CircuitClose(ctx, args[0], nil)
-				return compactOutput(result), err
+				return outputcontract.Circuit(&result), err
 			})
 		},
 	}

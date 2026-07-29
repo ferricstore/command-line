@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ferricstore/command-line/internal/buildinfo"
 	"github.com/spf13/cobra"
 )
 
@@ -36,5 +37,22 @@ func TestReadTransactionCommandsRejectsEmptyAndMalformedItems(t *testing.T) {
 				t.Fatal("readTransactionCommands() error = nil")
 			}
 		})
+	}
+}
+
+func TestTransactionDestructiveCommandRequiresConfirmationBeforeConnecting(t *testing.T) {
+	t.Parallel()
+
+	client := &cliConnectionClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetIn(strings.NewReader(`[["SET","one","1"],["FLUSHDB"]]`))
+	command.SetArgs([]string{"--profile", "production", "store", "transaction", "-"})
+
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "transaction command 2 requires --yes") {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if client.closed || client.command != nil {
+		t.Fatal("destructive transaction opened a connection without confirmation")
 	}
 }

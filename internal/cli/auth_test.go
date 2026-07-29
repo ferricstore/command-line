@@ -215,7 +215,7 @@ func TestAuthStatusVerifiesConnectionWithoutExposingCredential(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Authenticated", "User: operator", storedProfile.URL, "Method: password"} {
+	for _, want := range []string{"Authenticated", "Source: profile", "User: operator", storedProfile.URL, "Method: password"} {
 		if !strings.Contains(output.String(), want) {
 			t.Fatalf("status output = %q, want %q", output.String(), want)
 		}
@@ -301,5 +301,38 @@ func TestAuthLogoutKeepsProfileAndIsIdempotent(t *testing.T) {
 	}
 	if secondOutput.String() != "Already logged out.\n" {
 		t.Fatalf("second logout output = %q", secondOutput.String())
+	}
+}
+
+func TestDependencyOptionsComposeDefaultAuthService(t *testing.T) {
+	t.Setenv("FERRIC_PROFILE", "")
+
+	manager := profile.NewFileStore(filepath.Join(t.TempDir(), "config.json"))
+	if err := manager.Put(context.Background(), profile.Profile{
+		Name: "production",
+		URL:  "ferric://store.example.com:6388",
+		Authentication: profile.Authentication{
+			Method:   profile.AuthMethodPassword,
+			Username: "operator",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Use(context.Background(), "production"); err != nil {
+		t.Fatal(err)
+	}
+	credentials := &cliCredentialStore{values: map[string]string{"production": "super-secret"}}
+	command := New(
+		buildinfo.Info{},
+		WithProfileManager(manager),
+		WithCredentialStore(credentials),
+	)
+	command.SetArgs([]string{"auth", "logout"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := credentials.values["production"]; ok {
+		t.Fatal("default auth service did not use the configured credential store")
 	}
 }
