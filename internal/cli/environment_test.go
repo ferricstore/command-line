@@ -78,9 +78,10 @@ func TestNetworkCommandPrefersEnvironmentCredentialsOverSelectedProfile(t *testi
 }
 
 func TestDefaultEnvironmentCredentialSourceReadsProcessEnvironment(t *testing.T) {
-	t.Setenv("FERRIC_URL", "ferric://environment.example.com:6388")
+	t.Setenv("FERRIC_URL", "https://environment.example.com/proxy")
 	t.Setenv("FERRIC_USERNAME", "operator")
 	t.Setenv("FERRIC_PASSWORD", "environment-secret")
+	t.Setenv("FERRIC_CA_CERT_FILE", "/run/config/ferric-ca.pem")
 	t.Setenv("FERRIC_PROFILE", "missing-saved-profile")
 
 	provider := &cliConnectionProvider{
@@ -96,7 +97,8 @@ func TestDefaultEnvironmentCredentialSourceReadsProcessEnvironment(t *testing.T)
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if provider.profile.URL != "ferric://environment.example.com:6388" ||
+	if provider.profile.URL != "https://environment.example.com/proxy" ||
+		provider.profile.CACertFile != "/run/config/ferric-ca.pem" ||
 		provider.profile.Authentication.Username != "operator" ||
 		provider.secret != "environment-secret" {
 		t.Fatalf("provider received %#v/%q", provider.profile, provider.secret)

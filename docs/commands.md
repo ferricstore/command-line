@@ -59,7 +59,8 @@ repository and are exercised with mocks; live Enterprise tests belong in the
 Enterprise repository.
 
 CI and containers can bypass persistence with `FERRIC_URL`, `FERRIC_USERNAME`,
-and `FERRIC_PASSWORD` or `FERRIC_PASSWORD_FILE`. Enterprise machine builds use
+and `FERRIC_PASSWORD` or `FERRIC_PASSWORD_FILE`. HTTPS connections with a
+private CA also set `FERRIC_CA_CERT_FILE`. Enterprise machine builds use
 `FERRIC_CONTROL_URL`, `FERRIC_ORGANIZATION`, `FERRIC_CLUSTER`, and
 `FERRIC_API_TOKEN` or `FERRIC_API_TOKEN_FILE`. Secret-file variants are
 preferred for Docker and Kubernetes mounts.
@@ -102,6 +103,10 @@ ferric store transaction administrative-commands.json --yes
 
 A transaction containing a safety-sensitive administrative command is rejected
 before connecting unless `--yes` is present.
+
+Transactions require a connection-affine native session and therefore use
+`ferric://` or `ferrics://`. With an HTTPS profile, the CLI returns a native-only
+error before any transaction command reaches the server.
 
 ## Queue
 

@@ -4,7 +4,7 @@ Thank you for helping build the Ferric command-line interface.
 
 ## Requirements
 
-- Go 1.25.12 or newer
+- Go 1.26.7 or newer
 - mise for the pinned development toolchain
 - golangci-lint 2.12.2 for local lint runs
 - GoReleaser 2.17.0 for local release snapshots

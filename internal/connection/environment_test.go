@@ -30,9 +30,10 @@ func TestEnvironmentCredentialSourceResolvesOSSPassword(t *testing.T) {
 	t.Parallel()
 
 	source := newEnvironmentCredentialSource(mapEnvironment(map[string]string{
-		"FERRIC_URL":      " ferrics://store.example.com:6388 ",
-		"FERRIC_USERNAME": " operator ",
-		"FERRIC_PASSWORD": " secret with spaces ",
+		"FERRIC_URL":          " https://store.example.com/proxy ",
+		"FERRIC_USERNAME":     " operator ",
+		"FERRIC_PASSWORD":     " secret with spaces ",
+		"FERRIC_CA_CERT_FILE": " /run/config/ferric-ca.pem ",
 	}), mapSecretFiles(nil, nil))
 	if !source.Configured() {
 		t.Fatal("Configured() = false with password environment variables")
@@ -46,7 +47,8 @@ func TestEnvironmentCredentialSourceResolvesOSSPassword(t *testing.T) {
 		t.Fatal("Resolve() did not report environment credentials")
 	}
 	wantProfile := profile.Profile{
-		URL: "ferrics://store.example.com:6388",
+		URL:        "https://store.example.com/proxy",
+		CACertFile: "/run/config/ferric-ca.pem",
 		Authentication: profile.Authentication{
 			Method:   profile.AuthMethodPassword,
 			Username: "operator",
@@ -135,6 +137,26 @@ func TestEnvironmentCredentialSourceRejectsIncompleteAndConflictingSets(t *testi
 				"FERRIC_USERNAME": "default",
 			},
 			want: "FERRIC_PASSWORD or FERRIC_PASSWORD_FILE is required",
+		},
+		{
+			name: "empty CA certificate path",
+			values: map[string]string{
+				"FERRIC_URL":          "https://store:8443",
+				"FERRIC_USERNAME":     "default",
+				"FERRIC_PASSWORD":     "secret",
+				"FERRIC_CA_CERT_FILE": " ",
+			},
+			want: "FERRIC_CA_CERT_FILE must not be empty",
+		},
+		{
+			name: "relative CA certificate path",
+			values: map[string]string{
+				"FERRIC_URL":          "https://store:8443",
+				"FERRIC_USERNAME":     "default",
+				"FERRIC_PASSWORD":     "secret",
+				"FERRIC_CA_CERT_FILE": "certificates/private-ca.pem",
+			},
+			want: "FERRIC_CA_CERT_FILE must be an absolute path",
 		},
 		{
 			name: "two OSS secret sources",

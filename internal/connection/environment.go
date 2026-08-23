@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ferricstore/command-line/internal/profile"
@@ -18,6 +19,7 @@ const (
 	envUsername     = "FERRIC_USERNAME"
 	envPassword     = "FERRIC_PASSWORD"
 	envPasswordFile = "FERRIC_PASSWORD_FILE"
+	envCACertFile   = "FERRIC_CA_CERT_FILE"
 
 	envControlURL   = "FERRIC_CONTROL_URL"
 	envOrganization = "FERRIC_ORGANIZATION"
@@ -78,7 +80,7 @@ func (s *EnvironmentCredentialSource) Resolve(ctx context.Context) (EphemeralCre
 		return EphemeralCredentials{}, true, err
 	}
 
-	ossPresent := anySet(values, envURL, envUsername, envPassword, envPasswordFile)
+	ossPresent := anySet(values, envURL, envUsername, envPassword, envPasswordFile, envCACertFile)
 	enterprisePresent := anySet(
 		values,
 		envControlURL,
@@ -122,6 +124,7 @@ func environmentCredentialKeys() []string {
 		envUsername,
 		envPassword,
 		envPasswordFile,
+		envCACertFile,
 		envControlURL,
 		envOrganization,
 		envCluster,
@@ -146,9 +149,17 @@ func (s *EnvironmentCredentialSource) resolvePassword(
 	if err != nil {
 		return EphemeralCredentials{}, err
 	}
+	caCertFile, err := optionalEnvironmentValue(values, envCACertFile)
+	if err != nil {
+		return EphemeralCredentials{}, err
+	}
+	if caCertFile != "" && !filepath.IsAbs(caCertFile) {
+		return EphemeralCredentials{}, fmt.Errorf("%s must be an absolute path", envCACertFile)
+	}
 	return EphemeralCredentials{
 		Profile: profile.Profile{
-			URL: rawURL,
+			URL:        rawURL,
+			CACertFile: caCertFile,
 			Authentication: profile.Authentication{
 				Method:   profile.AuthMethodPassword,
 				Username: username,
@@ -234,6 +245,18 @@ func requiredEnvironmentValue(values map[string]string, name string) (string, er
 	value = strings.TrimSpace(value)
 	if !ok || value == "" {
 		return "", fmt.Errorf("%s is required", name)
+	}
+	return value, nil
+}
+
+func optionalEnvironmentValue(values map[string]string, name string) (string, error) {
+	value, ok := values[name]
+	if !ok {
+		return "", nil
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("%s must not be empty", name)
 	}
 	return value, nil
 }

@@ -21,8 +21,9 @@ func TestFileStoreRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "config.json")
 	store := NewFileStore(path)
 	want := Profile{
-		Name: "production",
-		URL:  "ferric://store.example.com:6388",
+		Name:       "production",
+		URL:        "https://store.example.com/proxy",
+		CACertFile: "/etc/ferric/ca.pem",
 		Authentication: Authentication{
 			Method:   AuthMethodPassword,
 			Username: "operator",
@@ -94,6 +95,23 @@ func TestFileStoreMissingProfile(t *testing.T) {
 	_, err := store.Get(context.Background(), "missing")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestFileStoreLoadsProfilesCreatedBeforeCACertificateSupport(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.json")
+	contents := []byte(`{"version":1,"profiles":{"production":{"url":"ferric://store:6388","auth":{"method":"password","username":"operator"}}}}`)
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := NewFileStore(path).Get(context.Background(), "production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.CACertFile != "" || stored.URL != "ferric://store:6388" {
+		t.Fatalf("legacy profile = %#v", stored)
 	}
 }
 

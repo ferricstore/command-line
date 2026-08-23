@@ -3,7 +3,7 @@ GOLANGCI_LINT ?= golangci-lint
 GORELEASER ?= goreleaser
 CONTAINER_IMAGE ?= ferric:dev
 
-.PHONY: build container test test-container test-race integration-login integration-oss lint fmt tidy verify snapshot clean
+.PHONY: build container test test-container test-race integration-login integration-oss integration-http lint fmt tidy verify snapshot clean
 
 build:
 	$(GO) build -o bin/ferric ./cmd/ferric
@@ -25,6 +25,9 @@ integration-oss:
 	./scripts/integration-login-oss.sh
 
 integration-login: integration-oss
+
+integration-http:
+	./scripts/integration-http-tls.sh
 
 lint:
 	$(GOLANGCI_LINT) run ./...

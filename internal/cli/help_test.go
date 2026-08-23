@@ -53,6 +53,24 @@ func TestRootHelpPresentsPrimaryServicesAndGlobalBehavior(t *testing.T) {
 	}
 }
 
+func TestLoginHelpDocumentsHTTPSAndCustomCA(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	command := New(buildinfo.Info{})
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs([]string{"auth", "login", "--help"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"https://", "--ca-cert", "username", "password"} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("login help does not contain %q:\n%s", want, output.String())
+		}
+	}
+}
+
 func rootHasCommand(root *cobra.Command, name string) bool {
 	for _, command := range root.Commands() {
 		if command.Name() == name {

@@ -9,7 +9,7 @@ import (
 
 // PasswordClientFactory constructs a direct OSS username/password client.
 type PasswordClientFactory interface {
-	NewPasswordClient(string, string, string) (Client, error)
+	NewPasswordClient(context.Context, profile.Profile, string) (Client, error)
 }
 
 // PasswordProvider opens direct OSS connections from saved credentials.
@@ -27,7 +27,7 @@ func (p *PasswordProvider) Method() profile.AuthMethod {
 	return profile.AuthMethodPassword
 }
 
-// Open constructs a client configured to authenticate on its TCP connection.
+// Open constructs a client configured to authenticate on its selected transport.
 func (p *PasswordProvider) Open(ctx context.Context, storedProfile profile.Profile, password string) (Client, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -41,9 +41,5 @@ func (p *PasswordProvider) Open(ctx context.Context, storedProfile profile.Profi
 	if storedProfile.Authentication.Username == "" {
 		return nil, errors.New("profile has no username")
 	}
-	return p.factory.NewPasswordClient(
-		storedProfile.URL,
-		storedProfile.Authentication.Username,
-		password,
-	)
+	return p.factory.NewPasswordClient(ctx, storedProfile, password)
 }

@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 oss_version="$(tr -d '[:space:]' <FERRICSTORE_VERSION)"
-image="${FERRICSTORE_IMAGE:-ghcr.io/ferricstore/ferricstore:${oss_version#v}@sha256:ee49d39e3b15cd6298537a88818647e71bcfc7571921e88bcf3a201311c690fc}"
+image="${FERRICSTORE_IMAGE:-quay.io/ferricstore/ferricstore:${oss_version#v}@sha256:d9f488539f0d6c1a513d2315e7a9c2947cc795b393f3774c9de8ba5e5b5c21b5}"
 suffix="$$-$RANDOM"
 bootstrap_name="ferric-command-line-login-bootstrap-$suffix"
 server_name="ferric-command-line-login-$suffix"
@@ -16,7 +16,7 @@ binary_path="$binary_dir/ferric"
 container_image="ferric-command-line-oss-integration:$suffix"
 export FERRIC_CONFIG_DIR="$binary_dir/config"
 unset FERRIC_PROFILE
-unset FERRIC_URL FERRIC_USERNAME FERRIC_PASSWORD FERRIC_PASSWORD_FILE
+unset FERRIC_URL FERRIC_USERNAME FERRIC_PASSWORD FERRIC_PASSWORD_FILE FERRIC_CA_CERT_FILE
 unset FERRIC_CONTROL_URL FERRIC_ORGANIZATION FERRIC_CLUSTER
 unset FERRIC_API_TOKEN FERRIC_API_TOKEN_FILE
 
@@ -35,10 +35,13 @@ cleanup() {
 trap cleanup EXIT
 
 run_go_test() {
-  if command -v mise >/dev/null 2>&1; then
+  if command -v go >/dev/null 2>&1; then
+    go test "$@"
+  elif command -v mise >/dev/null 2>&1; then
     mise exec -- go test "$@"
   else
-    go test "$@"
+    echo "go or mise is required" >&2
+    return 1
   fi
 }
 
@@ -87,10 +90,13 @@ wait_for_test ./internal/auth '^TestIntegrationOSSLogin$'
 export FERRICSTORE_OSS_CLI_TEST=1
 run_go_test -tags=integration -count=1 -run '^TestIntegrationOSSWorkflowQueryAndSchedule$' ./internal/cli
 
-if command -v mise >/dev/null 2>&1; then
+if command -v go >/dev/null 2>&1; then
+  go build -o "$binary_path" ./cmd/ferric
+elif command -v mise >/dev/null 2>&1; then
   mise exec -- go build -o "$binary_path" ./cmd/ferric
 else
-  go build -o "$binary_path" ./cmd/ferric
+  echo "go or mise is required" >&2
+  exit 1
 fi
 
 login_output="$(printf '%s\n' "$FERRICSTORE_OSS_PASSWORD" | "$binary_path" auth login --url "ferric://$FERRICSTORE_OSS_ADDR" --username "$FERRICSTORE_OSS_USERNAME" --password-stdin --no-store)"

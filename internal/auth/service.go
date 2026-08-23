@@ -19,6 +19,7 @@ type LoginRequest struct {
 	ProfileName string
 	Method      profile.AuthMethod
 	URL         string
+	CACertFile  string
 	Username    string
 	Secret      string
 	Store       bool

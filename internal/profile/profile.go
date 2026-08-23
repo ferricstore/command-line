@@ -43,6 +43,7 @@ type Authentication struct {
 type Profile struct {
 	Name           string         `json:"-"`
 	URL            string         `json:"url,omitempty"`
+	CACertFile     string         `json:"ca_cert_file,omitempty"`
 	ControlURL     string         `json:"control_url,omitempty"`
 	Organization   string         `json:"organization,omitempty"`
 	Cluster        string         `json:"cluster,omitempty"`
