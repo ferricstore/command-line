@@ -167,6 +167,7 @@ func newLogoutCommand(dependencies dependencies) *cobra.Command {
 func newLoginCommand(dependencies dependencies) *cobra.Command {
 	var (
 		rawURL        string
+		caCertFile    string
 		username      string
 		passwordStdin bool
 		noStore       bool
@@ -177,7 +178,7 @@ func newLoginCommand(dependencies dependencies) *cobra.Command {
 		Short: "Validate and store OSS username/password credentials",
 		Long:  "Authenticate with an OSS ACL username and password. The password is stored in the operating-system keystore unless --no-store is used.",
 		Example: "  ferric auth login --url ferric://127.0.0.1:6388 --username default\n" +
-			"  printf '%s\\n' \"$FERRIC_PASSWORD\" | ferric auth login --url ferrics://store.example.com:6388 --username operator --password-stdin",
+			"  printf '%s\\n' \"$FERRIC_PASSWORD\" | ferric auth login --url https://store.example.com --username operator --ca-cert /etc/ferric/ca.pem --password-stdin",
 		Args: cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			if dependencies.login == nil {
@@ -203,6 +204,7 @@ func newLoginCommand(dependencies dependencies) *cobra.Command {
 				ProfileName: profileName,
 				Method:      profile.AuthMethodPassword,
 				URL:         rawURL,
+				CACertFile:  caCertFile,
 				Username:    username,
 				Secret:      password,
 				Store:       !noStore,
@@ -228,7 +230,8 @@ func newLoginCommand(dependencies dependencies) *cobra.Command {
 		},
 	}
 
-	command.Flags().StringVar(&rawURL, "url", ferric.DefaultURL, "FerricStore ferric:// or ferrics:// URL")
+	command.Flags().StringVar(&rawURL, "url", ferric.DefaultURL, "FerricStore ferric://, ferrics://, or https:// URL")
+	command.Flags().StringVar(&caCertFile, "ca-cert", "", "PEM CA certificate for ferrics:// or https:// TLS verification")
 	command.Flags().StringVar(&username, "username", "default", "OSS ACL username")
 	command.Flags().BoolVar(&passwordStdin, "password-stdin", false, "read the password from standard input")
 	command.Flags().BoolVar(&noStore, "no-store", false, "validate credentials without storing the profile or password")

@@ -229,16 +229,14 @@ func TestOpenReturnsMissingProfileAndCredentialErrors(t *testing.T) {
 }
 
 type fakePasswordFactory struct {
-	url      string
-	username string
+	profile  profile.Profile
 	password string
 	client   Client
 	err      error
 }
 
-func (f *fakePasswordFactory) NewPasswordClient(rawURL, username, password string) (Client, error) {
-	f.url = rawURL
-	f.username = username
+func (f *fakePasswordFactory) NewPasswordClient(_ context.Context, storedProfile profile.Profile, password string) (Client, error) {
+	f.profile = storedProfile
 	f.password = password
 	return f.client, f.err
 }
@@ -263,7 +261,7 @@ func TestPasswordProviderConstructsAuthenticatedClient(t *testing.T) {
 	if client != factory.client {
 		t.Fatal("Open() returned the wrong client")
 	}
-	if factory.url != stored.URL || factory.username != "operator" || factory.password != "secret" {
-		t.Fatalf("factory input = %q/%q/%q", factory.url, factory.username, factory.password)
+	if factory.profile != stored || factory.password != "secret" {
+		t.Fatalf("factory input = %#v/%q", factory.profile, factory.password)
 	}
 }

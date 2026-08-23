@@ -113,6 +113,7 @@ func writeProfile(command *cobra.Command, storedProfile profile.Profile) error {
 	fields := [][2]string{
 		{"Name", storedProfile.Name},
 		{"URL", storedProfile.URL},
+		{"CA certificate", storedProfile.CACertFile},
 		{"Control URL", storedProfile.ControlURL},
 		{"Organization", storedProfile.Organization},
 		{"Cluster", storedProfile.Cluster},

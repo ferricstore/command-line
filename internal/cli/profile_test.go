@@ -31,8 +31,9 @@ func TestProfileCommandsManageSavedConnectionsWithoutExposingSecrets(t *testing.
 			},
 		},
 		{
-			Name: "production",
-			URL:  "ferrics://store.example.com:6388",
+			Name:       "production",
+			URL:        "https://store.example.com/proxy",
+			CACertFile: "/etc/ferric/ca.pem",
 			Authentication: profile.Authentication{
 				Method:   profile.AuthMethodPassword,
 				Username: "operator",
@@ -55,7 +56,7 @@ func TestProfileCommandsManageSavedConnectionsWithoutExposingSecrets(t *testing.
 	}
 
 	showOutput := executeProfileCLI(t, manager, credentials, "profile", "show", "production")
-	for _, want := range []string{"Name:", "production", "ferrics://store.example.com:6388", "operator"} {
+	for _, want := range []string{"Name:", "production", "https://store.example.com/proxy", "/etc/ferric/ca.pem", "operator"} {
 		if !strings.Contains(showOutput, want) {
 			t.Fatalf("profile show output = %q, want %q", showOutput, want)
 		}

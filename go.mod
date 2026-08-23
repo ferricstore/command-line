@@ -1,9 +1,9 @@
 module github.com/ferricstore/command-line
 
-go 1.25.12
+go 1.26.7
 
 require (
-	github.com/ferricstore/ferricstore-go v0.11.4
+	github.com/ferricstore/ferricstore-go v0.11.11
 	github.com/gofrs/flock v0.13.0
 	github.com/spf13/cobra v1.10.2
 	github.com/zalando/go-keyring v0.2.8

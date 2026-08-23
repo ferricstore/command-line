@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ferricstore/command-line/internal/connection"
+	"github.com/ferricstore/command-line/internal/ferric"
 	"github.com/ferricstore/command-line/internal/profile"
 	"github.com/spf13/cobra"
 )
@@ -49,6 +50,7 @@ func runNetworkCommand(command *cobra.Command, dependencies dependencies, name s
 		return err
 	}
 	result, operationErr := operation(ctx, active.client, active.profile)
+	operationErr = ferric.NormalizeOperationError(name, active.profile.URL, operationErr)
 	closeErr := active.client.Close()
 	if err := errors.Join(operationErr, closeErr); err != nil {
 		return fmt.Errorf("%s using %s: %w", name, active.description(), err)
