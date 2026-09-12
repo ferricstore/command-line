@@ -272,4 +272,7 @@ func TestWorkflowQueryFormatsServerDiagnostic(t *testing.T) {
 	if !errors.As(err, &queryErr) {
 		t.Fatalf("formatted error no longer unwraps to FlowQueryError: %v", err)
 	}
+	if count := strings.Count(err.Error(), "unknown field"); count != 1 {
+		t.Fatalf("formatted error repeats the server message %d times: %q", count, err)
+	}
 }

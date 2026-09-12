@@ -32,7 +32,7 @@ func TestACLPasswordStdinBecomesRuleWithoutPrintingSecret(t *testing.T) {
 	client := &operationsTestClient{}
 	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
 	command.SetIn(strings.NewReader("super-secret\n"))
-	command.SetArgs([]string{"--profile", "production", "acl", "set-user", "reporter", "on", "+get", "--password-stdin"})
+	command.SetArgs([]string{"--profile", "production", "acl", "set-user", "--yes", "--password-stdin", "reporter", "on", "+get"})
 
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
@@ -43,6 +43,44 @@ func TestACLPasswordStdinBecomesRuleWithoutPrintingSecret(t *testing.T) {
 	want := []any{"reporter", "on", "+get", ">super-secret"}
 	if len(client.aclArgs) != len(want) {
 		t.Fatalf("ACL args = %#v", client.aclArgs)
+	}
+	for index := range want {
+		if client.aclArgs[index] != want[index] {
+			t.Fatalf("ACL args = %#v, want %#v", client.aclArgs, want)
+		}
+	}
+}
+
+func TestACLSetUserRequiresConfirmationBeforeReadingPasswordOrConnecting(t *testing.T) {
+	t.Parallel()
+
+	client := &operationsTestClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetIn(strings.NewReader("super-secret\n"))
+	command.SetArgs([]string{"--profile", "production", "acl", "set-user", "--password-stdin", "reporter", "on", "+get"})
+
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "requires --yes") {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if client.aclSubcommand != "" || len(client.aclArgs) != 0 {
+		t.Fatal("ACL SETUSER reached the SDK without confirmation")
+	}
+}
+
+func TestACLSetUserPreservesNegativeRules(t *testing.T) {
+	t.Parallel()
+
+	client := &operationsTestClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{"--profile", "production", "acl", "set-user", "--yes", "reporter", "reset", "-@all", "+get"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	want := []any{"reporter", "reset", "-@all", "+get"}
+	if len(client.aclArgs) != len(want) {
+		t.Fatalf("ACL args = %#v, want %#v", client.aclArgs, want)
 	}
 	for index := range want {
 		if client.aclArgs[index] != want[index] {

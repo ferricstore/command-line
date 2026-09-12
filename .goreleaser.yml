@@ -8,6 +8,9 @@ builds:
     binary: ferric
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos:
       - linux
       - darwin
@@ -20,7 +23,7 @@ builds:
         -s -w
         -X main.version={{.Version}}
         -X main.commit={{.Commit}}
-        -X main.date={{.Date}}
+        -X main.date={{.CommitDate}}
 
 archives:
   - ids:
@@ -38,9 +41,15 @@ archives:
       {{- if eq .Arch "amd64" }}x86_64
       {{- else if eq .Arch "arm64" }}arm64
       {{- else }}{{ .Arch }}{{ end }}
+    builds_info:
+      mtime: "{{ .CommitDate }}"
     files:
-      - LICENSE
-      - README.md
+      - src: LICENSE
+        info:
+          mtime: "{{ .CommitDate }}"
+      - src: README.md
+        info:
+          mtime: "{{ .CommitDate }}"
 
 checksum:
   name_template: checksums.txt
@@ -48,6 +57,9 @@ checksum:
 
 source:
   enabled: true
+
+metadata:
+  mod_timestamp: "{{ .CommitTimestamp }}"
 
 changelog:
   use: github-native

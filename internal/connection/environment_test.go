@@ -57,6 +57,27 @@ func TestEnvironmentCredentialSourceResolvesOSSPassword(t *testing.T) {
 	}
 }
 
+func TestEnvironmentCredentialSourceRejectsCredentialsInOSSURL(t *testing.T) {
+	t.Parallel()
+
+	source := newEnvironmentCredentialSource(mapEnvironment(map[string]string{
+		"FERRIC_URL":      "ferric://embedded:secret@store.example.com:6388",
+		"FERRIC_USERNAME": "operator",
+		"FERRIC_PASSWORD": "environment-secret",
+	}), mapSecretFiles(nil, nil))
+
+	credentials, present, err := source.Resolve(context.Background())
+	if !present {
+		t.Fatal("Resolve() did not report the invalid environment source as present")
+	}
+	if err == nil || !strings.Contains(err.Error(), "must not contain credentials") {
+		t.Fatalf("Resolve() error = %v, want credential-bearing URL rejection", err)
+	}
+	if credentials != (EphemeralCredentials{}) {
+		t.Fatalf("Resolve() returned credentials for an unsafe URL: %#v", credentials)
+	}
+}
+
 func TestEnvironmentCredentialSourceReadsOSSPasswordFile(t *testing.T) {
 	t.Parallel()
 

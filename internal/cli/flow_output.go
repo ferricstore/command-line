@@ -39,6 +39,16 @@ func flowRecordOutput(record *ferricstore.FlowRecord) any {
 	if len(record.ValueRefs) != 0 {
 		result["value_refs"] = record.ValueRefs
 	}
+	putOutput(result, "indexed_state_meta", record.IndexedStateMeta)
+	if record.ValueSizes != nil {
+		result["value_sizes"] = record.ValueSizes
+	}
+	if record.ValueOmitted != nil {
+		result["value_omitted"] = record.ValueOmitted
+	}
+	if record.ValueMissing != nil {
+		result["value_missing"] = record.ValueMissing
+	}
 	return result
 }
 

@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 
+	"github.com/ferricstore/command-line/internal/endpoint"
 	"github.com/ferricstore/command-line/internal/profile"
 )
 
@@ -35,16 +35,9 @@ func (p *PasswordProvider) Login(ctx context.Context, request LoginRequest) (Pro
 	if p.validator == nil {
 		return ProviderResult{}, errors.New("password authentication is not configured")
 	}
-	rawURL := strings.TrimSpace(request.URL)
-	if rawURL == "" {
-		return ProviderResult{}, errors.New("FerricStore URL is required")
-	}
-	parsedURL, err := url.Parse(rawURL)
+	rawURL, err := endpoint.Validate(request.URL, "FerricStore URL")
 	if err != nil {
-		return ProviderResult{}, errors.New("FerricStore URL is invalid")
-	}
-	if parsedURL.User != nil {
-		return ProviderResult{}, errors.New("FerricStore URL must not contain credentials; use --username and the password prompt")
+		return ProviderResult{}, err
 	}
 	username := strings.TrimSpace(request.Username)
 	if username == "" {

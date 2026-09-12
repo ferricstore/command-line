@@ -4,7 +4,20 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 oss_version="$(tr -d '[:space:]' <FERRICSTORE_VERSION)"
-image="${FERRICSTORE_IMAGE:-ghcr.io/ferricstore/ferricstore:${oss_version#v}@sha256:ee49d39e3b15cd6298537a88818647e71bcfc7571921e88bcf3a201311c690fc}"
+if [[ -n "${FERRICSTORE_IMAGE:-}" ]]; then
+  image="$FERRICSTORE_IMAGE"
+else
+  image_repository="ghcr.io/ferricstore/ferricstore"
+  image_tag="${oss_version#v}"
+  image_digest="$(tr -d '[:space:]' <FERRICSTORE_IMAGE_DIGEST)"
+  resolved_digest="$(docker buildx imagetools inspect "$image_repository:$image_tag" | awk '$1 == "Digest:" { print $2; exit }')"
+  if [[ -z "$resolved_digest" || "$resolved_digest" != "$image_digest" ]]; then
+    echo "FerricStore $oss_version resolves to ${resolved_digest:-no digest}, expected $image_digest" >&2
+    echo "update FERRICSTORE_IMAGE_DIGEST together with FERRICSTORE_VERSION" >&2
+    exit 1
+  fi
+  image="$image_repository@$image_digest"
+fi
 suffix="$$-$RANDOM"
 bootstrap_name="ferric-command-line-login-bootstrap-$suffix"
 server_name="ferric-command-line-login-$suffix"

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +16,8 @@ type valueInput struct {
 	file string
 	json bool
 }
+
+const maxValueInputBytes = 16 * 1024 * 1024
 
 func (input *valueInput) addFlags(command *cobra.Command, noun string) {
 	command.Flags().StringVar(&input.file, "file", "", "read "+noun+" from a file; use - for stdin")
@@ -32,11 +35,7 @@ func (input valueInput) read(command *cobra.Command, positional *string) (any, b
 	)
 	if input.file != "" {
 		present = true
-		if input.file == "-" {
-			data, err = io.ReadAll(command.InOrStdin())
-		} else {
-			data, err = os.ReadFile(input.file)
-		}
+		data, err = readBoundedValueInput(command, input.file)
 		if err != nil {
 			return nil, false, fmt.Errorf("read input: %w", err)
 		}
@@ -58,6 +57,58 @@ func (input valueInput) read(command *cobra.Command, positional *string) (any, b
 		return nil, false, fmt.Errorf("parse JSON input: %w", err)
 	}
 	return value, true, nil
+}
+
+func readBoundedValueInput(command *cobra.Command, path string) ([]byte, error) {
+	var (
+		reader io.Reader
+		file   *os.File
+	)
+	if path == "-" {
+		reader = command.InOrStdin()
+	} else {
+		var err error
+		file, err = os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+		reader = file
+	}
+	data, readErr := io.ReadAll(io.LimitReader(reader, maxValueInputBytes+1))
+	if file != nil {
+		readErr = errors.Join(readErr, file.Close())
+	}
+	if readErr != nil {
+		return nil, readErr
+	}
+	if len(data) > maxValueInputBytes {
+		return nil, fmt.Errorf("input exceeds %d bytes", maxValueInputBytes)
+	}
+	return data, nil
+}
+
+func readBoundedJSONFile[T any](command *cobra.Command, path, noun string) (T, error) {
+	var value T
+	if strings.TrimSpace(path) == "" {
+		return value, fmt.Errorf("file is required; use --file <path> or --file - for %s", noun)
+	}
+	data, err := readBoundedValueInput(command, path)
+	if err != nil {
+		return value, fmt.Errorf("read %s: %w", noun, err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return value, fmt.Errorf("parse %s JSON: %w", noun, err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return value, fmt.Errorf("parse %s JSON: multiple JSON values are not allowed", noun)
+		}
+		return value, fmt.Errorf("parse %s JSON: %w", noun, err)
+	}
+	return value, nil
 }
 
 func parseAssignments(values []string, noun string) (map[string]any, error) {

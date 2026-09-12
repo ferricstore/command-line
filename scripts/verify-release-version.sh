@@ -15,12 +15,23 @@ fi
 release_tag="$1"
 sdk_version="${2:-}"
 version_file="${FERRICSTORE_VERSION_FILE:-FERRICSTORE_VERSION}"
+image_digest_file="${FERRICSTORE_IMAGE_DIGEST_FILE:-FERRICSTORE_IMAGE_DIGEST}"
 
 if [[ ! -s "$version_file" ]]; then
   echo "$version_file must declare the supported FerricStore OSS release" >&2
   exit 1
 fi
 oss_version="$(tr -d '[:space:]' <"$version_file")"
+
+if [[ ! -s "$image_digest_file" ]]; then
+  echo "$image_digest_file must pin the supported FerricStore OSS image" >&2
+  exit 1
+fi
+image_digest="$(tr -d '[:space:]' <"$image_digest_file")"
+if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "$image_digest_file must contain one sha256 image digest" >&2
+  exit 1
+fi
 
 if [[ -z "$sdk_version" ]]; then
   sdk_version="$(go list -m -f '{{.Version}}' github.com/ferricstore/ferricstore-go)"

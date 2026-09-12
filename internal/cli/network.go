@@ -50,10 +50,43 @@ func runNetworkCommand(command *cobra.Command, dependencies dependencies, name s
 	}
 	result, operationErr := operation(ctx, active.client, active.profile)
 	closeErr := active.client.Close()
-	if err := errors.Join(operationErr, closeErr); err != nil {
+	if operationErr != nil {
+		if err := errors.Join(operationErr, closeErr); err != nil {
+			return fmt.Errorf("%s using %s: %w", name, active.description(), err)
+		}
+	}
+	if err := writeResult(command.OutOrStdout(), format, result); err != nil {
 		return fmt.Errorf("%s using %s: %w", name, active.description(), err)
 	}
-	return writeResult(command.OutOrStdout(), format, result)
+	if closeErr != nil {
+		_, _ = fmt.Fprintf(
+			command.ErrOrStderr(),
+			"warning: close %s after successful %s: %v\n",
+			active.description(),
+			name,
+			closeErr,
+		)
+	}
+	return nil
+}
+
+const blockingResponseMargin = time.Second
+
+func validateBlockingWait(dependencies dependencies, wait time.Duration, source string) error {
+	if wait <= 0 {
+		return nil
+	}
+	timeout := runtimeTimeout(dependencies)
+	if timeout <= wait || timeout-wait < blockingResponseMargin {
+		return fmt.Errorf(
+			"--timeout (%s) must exceed %s (%s) by at least %s",
+			timeout,
+			source,
+			wait,
+			blockingResponseMargin,
+		)
+	}
+	return nil
 }
 
 func openActiveConnection(

@@ -75,14 +75,28 @@ func newStoreTransactionCommand(dependencies dependencies) *cobra.Command {
 						return nil, fmt.Errorf("queue transaction command %d: %w", index+1, err)
 					}
 				}
-				return transaction.Exec(ctx)
+				result, err := transaction.Exec(ctx)
+				return checkedTransactionResult(result, err, len(watchedKeys) != 0)
 			})
 		},
 	}
-	command.Flags().StringSliceVar(&keys, "key", nil, "routing key for cluster slot selection; repeatable")
-	command.Flags().StringSliceVar(&watchedKeys, "watch", nil, "abort if this key changes before EXEC; repeatable")
+	command.Flags().StringArrayVar(&keys, "key", nil, "routing key for cluster slot selection; repeatable")
+	command.Flags().StringArrayVar(&watchedKeys, "watch", nil, "abort if this key changes before EXEC; repeatable")
 	command.Flags().BoolVar(&yes, "yes", false, "confirm safety-sensitive commands in the transaction")
 	return command
+}
+
+func checkedTransactionResult(result []any, err error, watched bool) ([]any, error) {
+	if err != nil {
+		return nil, err
+	}
+	if result != nil {
+		return result, nil
+	}
+	if watched {
+		return nil, errors.New("transaction aborted because a watched key changed")
+	}
+	return nil, errors.New("transaction returned no execution result")
 }
 
 func readTransactionCommands(command *cobra.Command, path string) ([][]any, error) {

@@ -99,21 +99,22 @@ func budgetList(values []ferricstore.BudgetResult) []any {
 }
 
 func budget(value ferricstore.BudgetResult) map[string]any {
-	output := map[string]any{}
+	output := map[string]any{
+		"limit":              value.Limit,
+		"window_ms":          value.WindowMS,
+		"used":               value.Used,
+		"remaining":          value.Remaining,
+		"over_budget":        value.OverBudget,
+		"reservations_count": value.ReservationsCount,
+		"overage_amount":     value.OverageAmount,
+	}
 	putString(output, "scope", value.Scope)
 	putString(output, "status", value.Status)
-	putInt64(output, "limit", value.Limit)
-	putInt64(output, "window_ms", value.WindowMS)
 	putInt64(output, "window_start_ms", value.WindowStartMS)
-	putInt64(output, "used", value.Used)
-	putInt64(output, "remaining", value.Remaining)
-	putBool(output, "over_budget", value.OverBudget)
-	putInt64(output, "reservations_count", value.ReservationsCount)
 	putString(output, "reservation_id", value.ReservationID)
 	putInt64(output, "reserved_amount", value.ReservedAmount)
 	putInt64(output, "actual_amount", value.ActualAmount)
 	putMap(output, "usage", value.Usage)
-	putInt64(output, "overage_amount", value.OverageAmount)
 	putInt64(output, "reserved_at_ms", value.ReservedAtMS)
 	putInt64(output, "settled_at_ms", value.SettledAtMS)
 	return output
@@ -144,12 +145,13 @@ func limitList(values []ferricstore.LimitResult) []any {
 }
 
 func limit(value ferricstore.LimitResult) map[string]any {
-	output := map[string]any{}
+	output := map[string]any{
+		"limit":          value.Limit,
+		"free":           value.Free,
+		"epoch":          value.Epoch,
+		"config_version": value.ConfigVersion,
+	}
 	putString(output, "scope", value.Scope)
-	putInt64(output, "limit", value.Limit)
-	putInt64(output, "free", value.Free)
-	putInt64(output, "epoch", value.Epoch)
-	putInt64(output, "config_version", value.ConfigVersion)
 	putString(output, "policy_version_hash", value.PolicyVersionHash)
 	if value.Leases != nil {
 		leases := make(map[string]any, len(value.Leases))
@@ -166,16 +168,16 @@ func limit(value ferricstore.LimitResult) map[string]any {
 }
 
 func limitLease(value ferricstore.LimitLeaseState) map[string]any {
-	output := map[string]any{}
-	putInt64(output, "shard_id", value.ShardID)
-	putInt64(output, "epoch", value.Epoch)
-	putInt64(output, "expires_at_ms", value.ExpiresAtMS)
-	putInt64(output, "available", value.Available)
-	putInt64(output, "in_use", value.InUse)
-	putInt64(output, "pending_reclaim", value.PendingReclaim)
-	putFloat64(output, "drain_rate", value.DrainRate)
-	putInt64(output, "last_spend_at_ms", value.LastSpendAtMS)
-	return output
+	return map[string]any{
+		"shard_id":         value.ShardID,
+		"epoch":            value.Epoch,
+		"expires_at_ms":    value.ExpiresAtMS,
+		"available":        value.Available,
+		"in_use":           value.InUse,
+		"pending_reclaim":  value.PendingReclaim,
+		"drain_rate":       value.DrainRate,
+		"last_spend_at_ms": value.LastSpendAtMS,
+	}
 }
 
 // Circuit converts one SDK circuit-breaker response.
@@ -195,32 +197,33 @@ func circuitList(values []ferricstore.CircuitBreakerStatus) []any {
 }
 
 func circuit(value ferricstore.CircuitBreakerStatus) map[string]any {
-	output := map[string]any{}
+	output := map[string]any{
+		"failure_threshold":           value.FailureThreshold,
+		"open_ms":                     value.OpenMS,
+		"failures":                    value.Failures,
+		"failure_count":               value.FailureCount,
+		"window_ms":                   value.WindowMS,
+		"min_calls":                   value.MinCalls,
+		"failure_rate_pct":            value.FailureRatePct,
+		"latency_threshold_ms":        value.LatencyThresholdMS,
+		"half_open_max_probes":        value.HalfOpenMaxProbes,
+		"half_open_success_threshold": value.HalfOpenSuccessThreshold,
+		"half_open_in_flight":         value.HalfOpenInFlight,
+		"half_open_successes":         value.HalfOpenSuccesses,
+		"half_open_started_at_ms":     value.HalfOpenStartedAtMS,
+		"event_count":                 value.EventCount,
+		"retry_after_ms":              value.RetryAfterMS,
+	}
 	putString(output, "scope", value.Scope)
 	putString(output, "status", value.Status)
-	putInt64(output, "failure_threshold", value.FailureThreshold)
-	putInt64(output, "open_ms", value.OpenMS)
 	putInt64(output, "opened_at_ms", value.OpenedAtMS)
-	putInt64(output, "failures", value.Failures)
-	putInt64(output, "failure_count", value.FailureCount)
-	putInt64(output, "window_ms", value.WindowMS)
-	putInt64(output, "min_calls", value.MinCalls)
-	putInt64(output, "failure_rate_pct", value.FailureRatePct)
-	putInt64(output, "latency_threshold_ms", value.LatencyThresholdMS)
 	putStrings(output, "error_classes", value.ErrorClasses)
-	putInt64(output, "half_open_max_probes", value.HalfOpenMaxProbes)
-	putInt64(output, "half_open_success_threshold", value.HalfOpenSuccessThreshold)
-	putInt64(output, "half_open_in_flight", value.HalfOpenInFlight)
-	putInt64(output, "half_open_successes", value.HalfOpenSuccesses)
-	putInt64(output, "half_open_started_at_ms", value.HalfOpenStartedAtMS)
 	putInt64(output, "last_failure_ms", value.LastFailureMS)
 	putInt64(output, "last_success_ms", value.LastSuccessMS)
 	putInt64(output, "updated_at_ms", value.UpdatedAtMS)
 	if value.Events != nil {
 		output["events"] = value.Events
 	}
-	putInt64(output, "event_count", value.EventCount)
-	putInt64(output, "retry_after_ms", value.RetryAfterMS)
 	return output
 }
 
@@ -277,18 +280,6 @@ func putString(output map[string]any, name, value string) {
 
 func putInt64(output map[string]any, name string, value int64) {
 	if value != 0 {
-		output[name] = value
-	}
-}
-
-func putFloat64(output map[string]any, name string, value float64) {
-	if value != 0 {
-		output[name] = value
-	}
-}
-
-func putBool(output map[string]any, name string, value bool) {
-	if value {
 		output[name] = value
 	}
 }

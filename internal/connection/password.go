@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/ferricstore/command-line/internal/endpoint"
 	"github.com/ferricstore/command-line/internal/profile"
 )
 
@@ -41,8 +42,12 @@ func (p *PasswordProvider) Open(ctx context.Context, storedProfile profile.Profi
 	if storedProfile.Authentication.Username == "" {
 		return nil, errors.New("profile has no username")
 	}
+	rawURL, err := endpoint.Validate(storedProfile.URL, "FerricStore URL")
+	if err != nil {
+		return nil, err
+	}
 	return p.factory.NewPasswordClient(
-		storedProfile.URL,
+		rawURL,
 		storedProfile.Authentication.Username,
 		password,
 	)

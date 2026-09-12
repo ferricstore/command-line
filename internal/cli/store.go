@@ -107,7 +107,7 @@ func newStoreRawCommand(dependencies dependencies) *cobra.Command {
 			minArgs: 0,
 			maxArgs: 0,
 		}
-		delegate := newSDKCommand(dependencies, actual)
+		delegate := newUncheckedSDKCommand(dependencies, actual)
 		delegate.SetOut(command.OutOrStdout())
 		delegate.SetErr(command.ErrOrStderr())
 		delegate.SetIn(command.InOrStdin())
@@ -119,7 +119,7 @@ func newStoreRawCommand(dependencies dependencies) *cobra.Command {
 }
 
 func storeSpec(group, name, use, short, example string, minArgs, maxArgs int) sdkCommandSpec {
-	return sdkCommandSpec{
+	spec := sdkCommandSpec{
 		name:    name,
 		use:     use,
 		short:   short,
@@ -129,6 +129,19 @@ func storeSpec(group, name, use, short, example string, minArgs, maxArgs int) sd
 		minArgs: minArgs,
 		maxArgs: maxArgs,
 	}
+	switch name {
+	case "blpop", "brpop":
+		spec.blocking = secondsWaitAt(-1)
+	case "blmove":
+		spec.blocking = secondsWaitAt(4)
+	case "blmpop":
+		spec.blocking = secondsWaitAt(0)
+	case "xread", "xreadgroup":
+		spec.blocking = millisecondsWaitAfter("BLOCK")
+	case "wait":
+		spec.blocking = millisecondsWaitAt(1)
+	}
+	return spec
 }
 
 func storeCommandSpecs() []sdkCommandSpec {
@@ -201,7 +214,7 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeListsGroup, "blpop", "blpop <key>... <timeout>", "Block while popping from list heads", "blpop high low 5", 2, -1),
 		storeSpec(storeListsGroup, "brpop", "brpop <key>... <timeout>", "Block while popping from list tails", "brpop high low 5", 2, -1),
 		storeSpec(storeListsGroup, "blmove", "blmove <source> <destination> LEFT|RIGHT LEFT|RIGHT <timeout>", "Block while moving an element between lists", "blmove pending running LEFT RIGHT 5", 5, 5),
-		storeSpec(storeListsGroup, "blmpop", "blmpop <timeout> <numkeys> <key>... LEFT|RIGHT [COUNT count]", "Block while popping from multiple lists", "blmpop 5 2 high low LEFT COUNT 1", 5, -1),
+		storeSpec(storeListsGroup, "blmpop", "blmpop <timeout> <numkeys> <key>... LEFT|RIGHT [COUNT count]", "Block while popping from multiple lists", "blmpop 5 2 high low LEFT COUNT 1", 4, -1),
 
 		// Sets.
 		storeSpec(storeSetsGroup, "sadd", "sadd <key> <member>...", "Add members to a set", "sadd online user:1 user:2", 2, -1),
@@ -251,7 +264,7 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeStreamsGroup, "xdel", "xdel <key> <id>...", "Delete stream entries", "xdel events 1700000000000-0", 2, -1),
 		storeSpec(storeStreamsGroup, "xinfo", "xinfo STREAM <key>", "Inspect a stream", "xinfo STREAM events", 2, -1),
 		storeSpec(storeStreamsGroup, "xgroup", "xgroup CREATE <key> <group> <id> [MKSTREAM]", "Manage stream consumer groups", "xgroup CREATE events workers 0 MKSTREAM", 4, -1),
-		storeSpec(storeStreamsGroup, "xreadgroup", "xreadgroup GROUP <group> <consumer> [options...] STREAMS <key>... <id>...", "Read through a stream consumer group", "xreadgroup GROUP workers worker-1 COUNT 10 STREAMS events '>'", 7, -1),
+		storeSpec(storeStreamsGroup, "xreadgroup", "xreadgroup GROUP <group> <consumer> [options...] STREAMS <key>... <id>...", "Read through a stream consumer group", "xreadgroup GROUP workers worker-1 COUNT 10 STREAMS events '>'", 6, -1),
 		storeSpec(storeStreamsGroup, "xack", "xack <key> <group> <id>...", "Acknowledge stream entries", "xack events workers 1700000000000-0", 3, -1),
 
 		// Generic keys and expiry.
@@ -330,7 +343,7 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeSpecializedGroup, "tdigest.min", "tdigest.min <key>", "Get the minimum t-digest value", "tdigest.min latency", 1, 1),
 		storeSpec(storeSpecializedGroup, "tdigest.max", "tdigest.max <key>", "Get the maximum t-digest value", "tdigest.max latency", 1, 1),
 		storeSpec(storeSpecializedGroup, "tdigest.info", "tdigest.info <key>", "Inspect a t-digest", "tdigest.info latency", 1, 1),
-		storeSpec(storeSpecializedGroup, "tdigest.merge", "tdigest.merge <destination> <numkeys> <key>... [COMPRESSION value] [OVERRIDE]", "Merge t-digests", "tdigest.merge latency:all 2 latency:a latency:b OVERRIDE", 4, -1),
+		storeSpec(storeSpecializedGroup, "tdigest.merge", "tdigest.merge <destination> <numkeys> <key>... [COMPRESSION value] [OVERRIDE]", "Merge t-digests", "tdigest.merge latency:all 2 latency:a latency:b OVERRIDE", 3, -1),
 		storeSpec(storeSpecializedGroup, "geosearchstore", "geosearchstore <destination> <source> <origin and shape...> [STOREDIST]", "Store a geospatial search result", "geosearchstore nearby cities FROMLONLAT 34.78 32.08 BYRADIUS 50 km", 4, -1),
 
 		// FerricStore-native data operations.

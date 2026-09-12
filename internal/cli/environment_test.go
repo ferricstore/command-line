@@ -229,6 +229,39 @@ func TestAuthStatusReportsEnvironmentSourceWithoutSecret(t *testing.T) {
 	}
 }
 
+func TestAuthStatusRedactsCredentialsFromUnsafeProviderEndpoint(t *testing.T) {
+	t.Parallel()
+
+	credentials := environmentPasswordCredentials()
+	credentials.Profile.URL = "ferrics://embedded:leaked-secret@environment.example.com:6388?token=also-secret"
+	source := &staticCredentialSource{credentials: credentials, present: true}
+	provider := &cliConnectionProvider{
+		method: profile.AuthMethodPassword,
+		client: &cliConnectionClient{response: "PONG"},
+	}
+	command := New(
+		buildinfo.Info{},
+		WithConnectionService(connection.NewService(nil, nil, provider)),
+		WithEnvironmentCredentialSource(source),
+	)
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs([]string{"auth", "status"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"embedded", "leaked-secret", "also-secret", "token="} {
+		if strings.Contains(output.String(), forbidden) {
+			t.Fatalf("status exposed endpoint credential %q: %q", forbidden, output.String())
+		}
+	}
+	if !strings.Contains(output.String(), "ferrics://environment.example.com:6388") {
+		t.Fatalf("status omitted sanitized endpoint: %q", output.String())
+	}
+}
+
 func TestAuthLogoutDoesNotModifyEnvironmentOrSavedCredentials(t *testing.T) {
 	t.Parallel()
 

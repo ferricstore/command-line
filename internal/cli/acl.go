@@ -73,15 +73,19 @@ func newACLReadCommand(dependencies dependencies, name, use, short, example stri
 
 func newACLSetUserCommand(dependencies dependencies) *cobra.Command {
 	var passwordStdin bool
+	var yes bool
 	command := &cobra.Command{
 		Use:   "set-user <username> [rule...]",
 		Short: "Create or update an ACL user",
-		Long: "Apply Redis-compatible ACL rules. Use --password-stdin to avoid putting a new password in shell history. " +
+		Long: "Apply Redis-compatible ACL rules. This command requires --yes. Use --password-stdin to avoid putting a new password in shell history. " +
 			"A literal >password rule is accepted when explicitly supplied by the user.",
-		Example: "  ferric acl set-user reporter on '~reports:*' +get\n" +
-			"  printf '%s\\n' \"$NEW_PASSWORD\" | ferric acl set-user reporter on '~reports:*' +get --password-stdin",
+		Example: "  ferric acl set-user --yes reporter on '~reports:*' +get\n" +
+			"  printf '%s\\n' \"$NEW_PASSWORD\" | ferric acl set-user --yes --password-stdin reporter on '~reports:*' +get",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
+			if err := requireProtocolConfirmation(yes, "ACL user update", []any{"ACL", "SETUSER"}); err != nil {
+				return err
+			}
 			rules := append([]string(nil), args[1:]...)
 			if passwordStdin {
 				password, err := readPassword(command.InOrStdin())
@@ -97,6 +101,8 @@ func newACLSetUserCommand(dependencies dependencies) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&passwordStdin, "password-stdin", false, "read a password from stdin and add it as an ACL rule")
+	command.Flags().BoolVar(&yes, "yes", false, "confirm the ACL user update")
+	command.Flags().SetInterspersed(false)
 	return command
 }
 

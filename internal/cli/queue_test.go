@@ -65,6 +65,30 @@ type queueCancelClient struct {
 	calls   int
 }
 
+type queuePolicyClient struct {
+	calls int
+}
+
+type queueReclaimClient struct {
+	options ferricstore.ReclaimOptions
+	calls   int
+}
+
+func (*queueReclaimClient) Ping(context.Context, ...string) (string, error) { return "PONG", nil }
+func (*queueReclaimClient) Close() error                                    { return nil }
+func (client *queueReclaimClient) ReclaimJobs(_ context.Context, options ferricstore.ReclaimOptions) ([]ferricstore.ClaimedItem, error) {
+	client.calls++
+	client.options = options
+	return []ferricstore.ClaimedItem{{ID: "email-42", LeaseToken: "new-lease", FencingToken: 8}}, nil
+}
+
+func (*queuePolicyClient) Ping(context.Context, ...string) (string, error) { return "PONG", nil }
+func (*queuePolicyClient) Close() error                                    { return nil }
+func (client *queuePolicyClient) SetPolicy(_ context.Context, _ string, _ ferricstore.PolicyOptions) (ferricstore.PolicySnapshot, error) {
+	client.calls++
+	return ferricstore.PolicySnapshot{}, nil
+}
+
 func (*queueCancelClient) Ping(context.Context, ...string) (string, error) { return "PONG", nil }
 func (*queueCancelClient) Close() error                                    { return nil }
 func (client *queueCancelClient) Cancel(_ context.Context, options ferricstore.CancelOptions) (*ferricstore.FlowRecord, error) {
@@ -163,6 +187,45 @@ func TestQueueClaimValidatesWorkerBeforeConnecting(t *testing.T) {
 	}
 }
 
+func TestQueueClaimRejectsWaitLongerThanCommandTimeoutBeforeConnecting(t *testing.T) {
+	t.Parallel()
+
+	client := &queueClaimClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{
+		"--profile", "production", "--timeout", "10s", "queue", "claim", "email",
+		"--worker", "mailer-1", "--wait", "30s",
+	})
+
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--timeout") || !strings.Contains(err.Error(), "--wait") {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if client.calls != 0 {
+		t.Fatal("invalid wait/timeout combination reached the SDK")
+	}
+}
+
+func TestQueueReclaimForwardsWorkerAndNewLease(t *testing.T) {
+	t.Parallel()
+
+	client := &queueReclaimClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{
+		"--profile", "production", "queue", "reclaim", "email", "--worker", "mailer-2",
+		"--lease", "45s", "--limit", "3", "--partition", "tenant-a",
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 1 || client.options.Type != "email" || client.options.Worker != "mailer-2" ||
+		client.options.LeaseMS != int64((45*time.Second)/time.Millisecond) || client.options.Limit != 3 ||
+		client.options.PartitionKey != "tenant-a" || !client.options.JobOnly {
+		t.Fatalf("reclaim options = %#v", client.options)
+	}
+}
+
 func TestQueueCompleteRequiresAndForwardsClaimTokens(t *testing.T) {
 	t.Parallel()
 
@@ -248,6 +311,61 @@ func TestFlowPolicyOptionsSupportRetryAndFIFO(t *testing.T) {
 	}
 	if options.StatePolicies["queued"].Mode != ferricstore.FlowStateModeFIFO {
 		t.Fatalf("state policies = %#v", options.StatePolicies)
+	}
+}
+
+func TestFlowPolicySetRequiresConfirmationBeforeConnecting(t *testing.T) {
+	t.Parallel()
+
+	client := &queuePolicyClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{"--profile", "production", "queue", "policy", "set", "email", "--max-retries", "5"})
+
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "requires --yes") {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if client.calls != 0 {
+		t.Fatal("policy update reached the SDK without confirmation")
+	}
+}
+
+func TestQueueClaimDoesNotAdvertiseUnsupportedValueProjection(t *testing.T) {
+	t.Parallel()
+
+	queueClaim, _, err := newQueueCommand(dependencies{runtime: &runtimeOptions{timeout: time.Second}}).Find([]string{"claim"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flag := queueClaim.Flags().Lookup("value"); flag != nil {
+		t.Fatal("queue claim advertises --value even though the SDK claim result cannot return values")
+	}
+
+	workflowClaim, _, err := newWorkflowCommand(dependencies{runtime: &runtimeOptions{timeout: time.Second}}).Find([]string{"claim"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flag := workflowClaim.Flags().Lookup("value"); flag == nil {
+		t.Fatal("workflow claim lost supported --value projection")
+	}
+}
+
+func TestFlowRecordOutputIncludesValueProjectionDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	got := flowRecordOutput(&ferricstore.FlowRecord{
+		ID:               "order-42",
+		Type:             "order",
+		State:            "running",
+		IndexedStateMeta: "attempt",
+		ValueSizes:       map[string]any{"receipt": int64(2048)},
+		ValueOmitted:     map[string]any{"receipt": true},
+		ValueMissing:     map[string]any{"invoice": true},
+	}).(map[string]any)
+	for _, key := range []string{"indexed_state_meta", "value_sizes", "value_omitted", "value_missing"} {
+		if _, ok := got[key]; !ok {
+			t.Fatalf("flow output omitted %q: %#v", key, got)
+		}
 	}
 }
 

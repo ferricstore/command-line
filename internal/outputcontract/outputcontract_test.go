@@ -84,12 +84,56 @@ func TestScheduleFireDueHasExplicitCompactSchema(t *testing.T) {
 		Raw:     map[string]any{"transport_only": true},
 	})
 	want := map[string]any{
-		"claimed": int64(2),
-		"fired":   int64(1),
-		"errors":  []any{map[string]any{"id": "daily", "reason": "target_failed"}},
+		"claimed":   int64(2),
+		"fired":     int64(1),
+		"skipped":   int64(0),
+		"coalesced": int64(0),
+		"errors":    []any{map[string]any{"id": "daily", "reason": "target_failed"}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ScheduleFireDue() = %#v, want %#v", got, want)
+	}
+}
+
+func TestScheduleFireDuePreservesZeroCounters(t *testing.T) {
+	t.Parallel()
+
+	got := ScheduleFireDue(ferricstore.ScheduleFireDueResult{}).(map[string]any)
+	for _, key := range []string{"claimed", "fired", "skipped", "coalesced"} {
+		if value, ok := got[key]; !ok || value != int64(0) {
+			t.Fatalf("ScheduleFireDue() %s = %#v, present=%t", key, value, ok)
+		}
+	}
+}
+
+func TestBudgetPreservesFalseAndZeroCapacityFields(t *testing.T) {
+	t.Parallel()
+
+	got := Budget(&ferricstore.BudgetResult{Scope: "payments"}).(map[string]any)
+	if value, ok := got["over_budget"]; !ok || value != false {
+		t.Fatalf("Budget() over_budget = %#v, present=%t", value, ok)
+	}
+	for _, key := range []string{"limit", "used", "remaining", "reservations_count"} {
+		if value, ok := got[key]; !ok || value != int64(0) {
+			t.Fatalf("Budget() %s = %#v, present=%t", key, value, ok)
+		}
+	}
+}
+
+func TestLimitAndCircuitPreserveZeroCounters(t *testing.T) {
+	t.Parallel()
+
+	limit := Limit(&ferricstore.LimitResult{Scope: "workers"}).(map[string]any)
+	for _, key := range []string{"limit", "free", "epoch", "config_version"} {
+		if value, ok := limit[key]; !ok || value != int64(0) {
+			t.Fatalf("Limit() %s = %#v, present=%t", key, value, ok)
+		}
+	}
+	circuit := Circuit(&ferricstore.CircuitBreakerStatus{Scope: "payments"}).(map[string]any)
+	for _, key := range []string{"failures", "failure_count", "half_open_in_flight", "half_open_successes", "event_count", "retry_after_ms"} {
+		if value, ok := circuit[key]; !ok || value != int64(0) {
+			t.Fatalf("Circuit() %s = %#v, present=%t", key, value, ok)
+		}
 	}
 }
 

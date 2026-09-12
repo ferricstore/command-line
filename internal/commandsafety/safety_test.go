@@ -19,6 +19,7 @@ func TestRequiresConfirmation(t *testing.T) {
 		{name: "cluster read", command: []any{"CLUSTER.STATUS"}},
 		{name: "schedule deletion", command: []any{"FLOW.SCHEDULE.DELETE", "daily"}, want: true},
 		{name: "policy mutation", command: []any{"FLOW.POLICY.SET", "orders"}, want: true},
+		{name: "retention cleanup", command: []any{"FLOW.RETENTION_CLEANUP"}, want: true},
 		{name: "projection repair", command: []any{"FERRICSTORE.DOCTOR", "START", "REPAIR", "PROJECTIONS"}, want: true},
 		{name: "doctor check", command: []any{"FERRICSTORE.DOCTOR", "START", "CHECK"}},
 		{name: "module load", command: []any{"MODULE", "LOAD", "extension.so"}, want: true},

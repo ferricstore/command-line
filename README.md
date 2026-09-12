@@ -35,7 +35,8 @@ go install github.com/ferricstore/command-line/cmd/ferric@v0.11.4
 Release archives for Linux, macOS, and Windows will also be available from the
 [GitHub Releases page](https://github.com/ferricstore/command-line/releases).
 
-For Docker, Kubernetes utility pods, and CI, run the official one-shot image:
+After the first release is published and the GHCR package is made public,
+Docker, Kubernetes utility pods, and CI can run the official one-shot image:
 
 ~~~sh
 docker run --rm ghcr.io/ferricstore/command-line:v0.11.4 version
@@ -47,11 +48,16 @@ The same release publishes one image index for Linux amd64 and arm64. See the
 [container guide](docs/containers.md) for secret-file authentication, hardened
 execution, Kubernetes, and copying the binary into another image.
 
+The initial macOS archives are not Developer ID signed or notarized. Until
+signing is configured, `go install` is the recommended macOS installation
+path for environments that require verified local build provenance.
+
 ## Usage
 
 ~~~text
 ferric
 ferric auth login --url ferric://127.0.0.1:6388 --username default
+ferric auth login --method enterprise-api-token --control-url https://platform.example.com --organization acme --cluster CLUSTER_ID --token-stdin
 ferric auth status
 ferric auth logout
 ferric server ping
@@ -74,6 +80,10 @@ ferric completion powershell
 The executable is named `ferric`. Commands that connect to FerricStore use the
 official [FerricStore Go SDK](https://github.com/ferricstore/ferricstore-go).
 See the complete [command design and vocabulary](docs/commands.md).
+
+Batch queue and workflow lifecycle operations use strict, bounded snake_case
+JSON files (or stdin) so large operations remain reviewable and scriptable.
+See the [batch command contract](docs/commands.md#workflow).
 
 ## Command model
 
@@ -162,6 +172,30 @@ authenticated SDK client, execute the operation, and close it. Login does not
 leave a background TCP process running. The SDK reapplies authentication if it
 has to reconnect while a command is running.
 
+## Platform Login
+
+Human users receive a time-limited `fsp_user_` token from an authenticated
+Platform session. Services use an `fsp_sa_` service-account token whose
+allowlist includes `client_session.issue` and whose service account has the same
+current RBAC grant for the target cluster. Validate and store either token from
+standard input:
+
+~~~sh
+printf '%s\n' "$FERRIC_PLATFORM_TOKEN" | ferric auth login \
+  --method enterprise-sso \
+  --control-url https://platform.example.com \
+  --organization acme \
+  --cluster 018f20dc-7c39-7f16-9fa8-7e807f9a0f48 \
+  --token-stdin
+~~~
+
+Use `--method enterprise-api-token` for a service-account token. Login performs
+a real Platform exchange and native PING before saving anything. Normal commands
+exchange again for a 15-minute, namespace-scoped Enterprise credential and send
+only that temporary username/password to FerricStore. The control-plane token
+stays in the operating-system keyring and is never forwarded to the data plane.
+Platform URLs require HTTPS except for loopback development.
+
 Check a saved connection with an optional PING message:
 
 ~~~sh
@@ -198,9 +232,9 @@ missing environment value from a saved profile or keyring.
 
 Enterprise builds use `FERRIC_CONTROL_URL`, `FERRIC_ORGANIZATION`,
 `FERRIC_CLUSTER`, and exactly one of `FERRIC_API_TOKEN` or
-`FERRIC_API_TOKEN_FILE`. The public build validates and mock-tests that
-provider boundary; live token exchange remains owned by the Enterprise
-repository.
+`FERRIC_API_TOKEN_FILE`. Commands exchange the service token through Platform
+and authenticate to the packaged Enterprise data plane with the returned
+short-lived native credential.
 
 An explicit `--profile` wins over environment credentials. Otherwise, a
 complete direct environment set wins over `FERRIC_PROFILE`, the selected

@@ -267,3 +267,54 @@ func TestPasswordProviderConstructsAuthenticatedClient(t *testing.T) {
 		t.Fatalf("factory input = %q/%q/%q", factory.url, factory.username, factory.password)
 	}
 }
+
+func TestPasswordProviderRejectsCredentialsInSavedProfileURL(t *testing.T) {
+	t.Parallel()
+
+	factory := &fakePasswordFactory{client: &fakeClient{}}
+	provider := NewPasswordProvider(factory)
+	stored := profile.Profile{
+		Name: "unsafe",
+		URL:  "ferric://embedded:secret@store.example.com:6388",
+		Authentication: profile.Authentication{
+			Method:   profile.AuthMethodPassword,
+			Username: "operator",
+		},
+	}
+
+	client, err := provider.Open(context.Background(), stored, "keyring-secret")
+	if err == nil || !strings.Contains(err.Error(), "must not contain credentials") {
+		t.Fatalf("Open() client/error = %#v/%v, want credential-bearing URL rejection", client, err)
+	}
+	if factory.url != "" || factory.username != "" || factory.password != "" {
+		t.Fatalf("unsafe profile reached password client factory: %q/%q/%q", factory.url, factory.username, factory.password)
+	}
+}
+
+func TestServiceLoadsCredentialReferenceFromProfile(t *testing.T) {
+	t.Parallel()
+
+	const reference = "production-credential-generation"
+	storedProfile := profile.Profile{
+		Name: "production",
+		URL:  "ferric://store.example.com:6388",
+		Authentication: profile.Authentication{
+			Method:        profile.AuthMethodPassword,
+			Username:      "operator",
+			CredentialRef: reference,
+		},
+	}
+	profiles := &memoryProfileStore{values: map[string]profile.Profile{"production": storedProfile}}
+	credentials := &memoryCredentialStore{values: map[string]string{reference: "referenced-secret"}}
+	provider := &mockProvider{method: profile.AuthMethodPassword, client: &fakeClient{}}
+	service := NewService(profiles, credentials, provider)
+
+	client, gotProfile, err := service.Open(context.Background(), "production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	if gotProfile != storedProfile || provider.secret != "referenced-secret" {
+		t.Fatalf("Open() profile/secret = %#v/%q", gotProfile, provider.secret)
+	}
+}

@@ -218,3 +218,39 @@ func TestFileStoreMutationLockRespectsContext(t *testing.T) {
 		t.Fatalf("Put() error = %v, want context deadline", err)
 	}
 }
+
+func TestFileStoreCredentialMutationSerializesAcrossInstances(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.json")
+	storeA := NewFileStore(path)
+	storeB := NewFileStore(path)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- storeA.WithCredentialMutation(context.Background(), func(context.Context) error {
+			close(entered)
+			<-release
+			return nil
+		})
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("first credential mutation did not acquire the lock")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := storeB.WithCredentialMutation(ctx, func(context.Context) error {
+		return errors.New("second mutation unexpectedly ran")
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("WithCredentialMutation() error = %v, want context deadline", err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}

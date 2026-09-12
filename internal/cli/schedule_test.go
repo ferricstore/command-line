@@ -65,6 +65,38 @@ func TestScheduleCreateBuildsRecurringTarget(t *testing.T) {
 	}
 }
 
+func TestScheduleStateCompletionMatchesSDKStates(t *testing.T) {
+	t.Parallel()
+
+	got, directive := completeScheduleState(nil, nil, "")
+	want := []string{"active", "paused", "running", "completed", "failed", "cancelled", "all"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("completeScheduleState() = %#v, want %#v", got, want)
+	}
+	if directive == 0 {
+		t.Fatal("completion should disable file suggestions")
+	}
+}
+
+func TestScheduleFireDueRejectsWaitLongerThanCommandTimeoutBeforeConnecting(t *testing.T) {
+	t.Parallel()
+
+	client := &cliConnectionClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{
+		"--profile", "production", "--timeout", "10s", "workflow", "schedule", "fire-due",
+		"--worker", "scheduler-1", "--wait", "30s",
+	})
+
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--timeout") || !strings.Contains(err.Error(), "--wait") {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if client.closed {
+		t.Fatal("invalid wait/timeout combination opened a connection")
+	}
+}
+
 func TestScheduleCreateRejectsMultipleTimingModesBeforeConnecting(t *testing.T) {
 	t.Parallel()
 

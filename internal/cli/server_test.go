@@ -111,6 +111,32 @@ func TestServerPingClosesClientAfterCommandFailure(t *testing.T) {
 	}
 }
 
+func TestNetworkCommandDoesNotFailAcknowledgedOperationWhenCloseFails(t *testing.T) {
+	t.Parallel()
+
+	closeErr := errors.New("connection teardown failed")
+	client := &cliConnectionClient{result: "OK", closeErr: closeErr}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	var output bytes.Buffer
+	var diagnostics bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&diagnostics)
+	command.SetArgs([]string{"--profile", "production", "store", "set", "key", "value"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("acknowledged SET failed because Close failed: %v", err)
+	}
+	if output.String() != "OK\n" {
+		t.Fatalf("output = %q, want acknowledged result", output.String())
+	}
+	if !strings.Contains(diagnostics.String(), "warning") || !strings.Contains(diagnostics.String(), closeErr.Error()) {
+		t.Fatalf("diagnostics = %q, want close warning", diagnostics.String())
+	}
+	if !client.closed {
+		t.Fatal("client Close was not attempted")
+	}
+}
+
 func TestServerPingReportsMissingSavedProfile(t *testing.T) {
 	t.Parallel()
 
@@ -150,5 +176,64 @@ func TestServerKeyInfoUsesSDKCommand(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), `"type": "string"`) {
 		t.Fatalf("output = %q", output.String())
+	}
+}
+
+func TestServerCapabilitiesUsesFerricStoreCapabilitiesCommand(t *testing.T) {
+	t.Parallel()
+
+	client := &cliConnectionClient{result: []any{"GET", "SET"}}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{"--profile", "production", "server", "capabilities"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	want := []any{"FERRICSTORE.CAPABILITIES"}
+	if len(client.command) != len(want) || client.command[0] != want[0] {
+		t.Fatalf("SDK command = %#v, want %#v", client.command, want)
+	}
+}
+
+func TestServerPersistenceMutationRequiresConfirmationBeforeConnecting(t *testing.T) {
+	t.Parallel()
+
+	for _, subcommand := range []string{"save", "background-save"} {
+		subcommand := subcommand
+		t.Run(subcommand, func(t *testing.T) {
+			t.Parallel()
+			client := &cliConnectionClient{result: "OK"}
+			command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+			command.SetArgs([]string{"--profile", "production", "server", "persistence", subcommand})
+
+			err := command.Execute()
+			if err == nil || !strings.Contains(err.Error(), "requires --yes") {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if client.command != nil {
+				t.Fatalf("persistence mutation reached SDK without confirmation: %#v", client.command)
+			}
+		})
+	}
+}
+
+func TestConfirmedSDKCommandPreservesNegativeProtocolValue(t *testing.T) {
+	t.Parallel()
+
+	client := &cliConnectionClient{result: "OK"}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{"--profile", "production", "server", "config", "set", "--yes", "feature.threshold", "-1"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	want := []any{"CONFIG", "SET", "feature.threshold", "-1"}
+	if len(client.command) != len(want) {
+		t.Fatalf("SDK command = %#v, want %#v", client.command, want)
+	}
+	for index := range want {
+		if client.command[index] != want[index] {
+			t.Fatalf("SDK command = %#v, want %#v", client.command, want)
+		}
 	}
 }

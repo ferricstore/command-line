@@ -121,6 +121,8 @@ ferric queue history <id>
 ferric queue stats <type>
 ferric queue policy get <type>
 ferric queue policy set <type> [policy flags]
+ferric queue enqueue-many --file jobs.json
+ferric queue complete-many|retry-many|fail-many|cancel-many --file mutations.json
 ~~~
 
 `claim` returns the job ID, payload, lease token, fencing token, state, and
@@ -152,6 +154,13 @@ ferric workflow rewind <id> --to-event <event-id>
 ferric workflow children <id> --partition <key>
 ferric workflow values get <ref>...
 ferric workflow policy get|set <type>
+ferric workflow exists <type> [read filters]
+ferric workflow count-by-state <type> <state> [read filters]
+ferric workflow attributes <type> [read filters]
+ferric workflow attribute-values <type> <attribute> [read filters]
+ferric workflow start-many --file workflows.json
+ferric workflow complete-many|transition-many|retry-many|fail-many|cancel-many --file mutations.json
+ferric workflow run-steps-many --file steps.json
 ~~~
 
 The workflow commands share payload, partition, attributes, time, lease, and
@@ -172,6 +181,41 @@ count result together with page, quality, and resource-usage contracts.
 `query explain --analyze` executes an admitted plan without returning records,
 and `query indexes` reports the OSS catalog, lifecycle, validation, and
 statistics status.
+
+Batch lifecycle commands accept exactly one bounded JSON document through
+`--file`; use `--file -` for stdin. Field names are snake_case and unknown
+fields are rejected before connecting, which prevents a misspelled safety or
+partition field from being silently ignored. For example:
+
+~~~json
+{
+  "type": "email",
+  "state": "queued",
+  "partition_key": "tenant-a",
+  "idempotent": true,
+  "items": [
+    {
+      "id": "email-42",
+      "payload": {"to": "ada@example.com"},
+      "attributes": {"region": "eu"}
+    }
+  ]
+}
+~~~
+
+Mutation items carry the same lease and fencing values returned by claim. A
+completion batch has this shape; retry and failure use `error`, cancellation
+uses `reason`, and transitions add `from_state` and `to_state`:
+
+~~~json
+{
+  "partition_key": "tenant-a",
+  "result": {"sent": true},
+  "items": [
+    {"id": "email-42", "lease_token": "TOKEN", "fencing_token": 7}
+  ]
+}
+~~~
 
 ## Workflow schedules
 
@@ -236,11 +280,13 @@ Workflow governance is nested with the executions it controls:
 
 ~~~text
 ferric workflow governance overview
+ferric workflow governance ledger <workflow-id>
 ferric workflow governance approval request|get|list|approve|reject
 ferric workflow governance circuit get|open|close
 ferric workflow governance effect get|reserve|confirm|fail|compensate
 ferric workflow governance budget get|list|reserve|commit|release
 ferric workflow governance limit get|list|lease|spend|release
+ferric workflow retention cleanup --limit 100 --yes
 ~~~
 
 Destructive and safety-sensitive administrative operations require `--yes`;

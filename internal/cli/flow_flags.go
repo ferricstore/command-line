@@ -198,7 +198,7 @@ type flowClaimFlags struct {
 	values            []string
 }
 
-func (flags *flowClaimFlags) add(command *cobra.Command) {
+func (flags *flowClaimFlags) add(command *cobra.Command, supportsValues bool) {
 	command.Flags().StringSliceVar(&flags.states, "state", []string{"queued"}, "eligible state; repeatable")
 	command.Flags().StringVar(&flags.worker, "worker", "", "worker identity (required)")
 	command.Flags().StringVar(&flags.partition, "partition", "", "partition key")
@@ -208,7 +208,9 @@ func (flags *flowClaimFlags) add(command *cobra.Command) {
 	command.Flags().BoolVar(&flags.reclaimExpired, "reclaim-expired", false, "include work with an expired lease")
 	command.Flags().BoolVar(&flags.payload, "payload", true, "include payloads in claimed jobs")
 	command.Flags().BoolVar(&flags.includeAttributes, "attributes", true, "include attributes in claimed jobs")
-	command.Flags().StringSliceVar(&flags.values, "value", nil, "named value to include; repeatable")
+	if supportsValues {
+		command.Flags().StringSliceVar(&flags.values, "value", nil, "named value to include; repeatable")
+	}
 	_ = command.RegisterFlagCompletionFunc("state", completeCommonFlowState)
 }
 

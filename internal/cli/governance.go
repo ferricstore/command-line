@@ -28,6 +28,7 @@ func newGovernanceCommand(dependencies dependencies) *cobra.Command {
 	}
 	command.AddCommand(
 		newGovernanceOverviewCommand(dependencies),
+		newGovernanceLedgerCommand(dependencies),
 		newApprovalCommand(dependencies),
 		newCircuitCommand(dependencies),
 		newBudgetCommand(dependencies),
@@ -133,6 +134,9 @@ func newApprovalRequestCommand(dependencies dependencies) *cobra.Command {
 		Example: "  ferric workflow governance approval request approval-42 --flow-id order-42 --scope payments --reason 'large payment' --requested-by worker-1 --assignee finance",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
+			if command.Flags().Changed("timeout-after") && command.Flags().Changed("expires-at") {
+				return errors.New("--timeout-after and --expires-at cannot be used together")
+			}
 			if strings.TrimSpace(flowID) == "" {
 				return errors.New("flow-id is required; use --flow-id <id>")
 			}
