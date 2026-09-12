@@ -3,8 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-expected_version="0.11.15"
-expected_digest="sha256:8d86005f22eac945ee13bd4c909f3149435be1dca747839e091830d238d4b752"
+expected_version="0.11.16"
+expected_digest="sha256:6a7364fb1c8936a0bf6658fea5b4c3a563b477291209203af98f1a5d34540d8a"
 if [[ "$(tr -d '[:space:]' <FERRICSTORE_IMAGE_VERSION)" != "$expected_version" ]]; then
   echo "FERRICSTORE_IMAGE_VERSION must track the current OSS integration image" >&2
   exit 1
