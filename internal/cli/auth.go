@@ -294,7 +294,7 @@ func loginSecret(
 		return "", errors.New("--password-stdin is only valid with --method password")
 	}
 	if !tokenStdin {
-		return "", errors.New("Enterprise authentication requires --token-stdin")
+		return "", errors.New("enterprise authentication requires --token-stdin")
 	}
 	return readPassword(command.InOrStdin())
 }

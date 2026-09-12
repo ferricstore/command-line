@@ -141,6 +141,7 @@ func (r staticPasswordReader) ReadPassword(_ io.Reader, _ io.Writer) (string, er
 
 func TestLoginCommandReadsPasswordFromStdinAndStores(t *testing.T) {
 	t.Parallel()
+	caCertFile := filepath.Join(t.TempDir(), "ca.pem")
 
 	profiles := &cliProfileStore{values: make(map[string]profile.Profile)}
 	credentials := &cliCredentialStore{values: make(map[string]string)}
@@ -155,7 +156,7 @@ func TestLoginCommandReadsPasswordFromStdinAndStores(t *testing.T) {
 		"auth", "login",
 		"--profile", "production",
 		"--url", "https://store.example.com/proxy",
-		"--ca-cert", "/etc/ferric/ca.pem",
+		"--ca-cert", caCertFile,
 		"--username", "operator",
 		"--password-stdin",
 	})
@@ -170,7 +171,7 @@ func TestLoginCommandReadsPasswordFromStdinAndStores(t *testing.T) {
 	if credentials.values[storedProfile.CredentialReference()] != "super-secret" {
 		t.Fatal("credential was not stored")
 	}
-	if validator.profile.CACertFile != "/etc/ferric/ca.pem" || profiles.values["production"].CACertFile != "/etc/ferric/ca.pem" {
+	if validator.profile.CACertFile != caCertFile || profiles.values["production"].CACertFile != caCertFile {
 		t.Fatalf("CA certificate was not preserved: validator=%#v stored=%#v", validator.profile, profiles.values["production"])
 	}
 	if strings.Contains(output.String(), "super-secret") {

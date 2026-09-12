@@ -46,10 +46,10 @@ func (p *EnterpriseTokenProvider) Open(
 		return nil, err
 	}
 	if p == nil || p.broker == nil || p.factory == nil {
-		return nil, errors.New("Enterprise connections are not configured")
+		return nil, errors.New("enterprise connections are not configured")
 	}
 	if p.method != profile.AuthMethodEnterpriseSSO && p.method != profile.AuthMethodEnterpriseAPIToken {
-		return nil, errors.New("Enterprise authentication method is invalid")
+		return nil, errors.New("enterprise authentication method is invalid")
 	}
 	if storedProfile.Authentication.Method != p.method {
 		return nil, errors.New("profile authentication method does not match provider")

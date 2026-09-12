@@ -53,7 +53,7 @@ func (c *Client) Exchange(
 	ttl time.Duration,
 ) (Credential, error) {
 	if c == nil || c.httpClient == nil {
-		return Credential{}, errors.New("Platform API client is not configured")
+		return Credential{}, errors.New("platform API client is not configured")
 	}
 	baseURL, err := validateControlURL(controlURL)
 	if err != nil {
@@ -61,14 +61,14 @@ func (c *Client) Exchange(
 	}
 	token = strings.TrimSpace(token)
 	if token == "" {
-		return Credential{}, errors.New("Platform API token is required")
+		return Credential{}, errors.New("platform API token is required")
 	}
 	clusterID = strings.TrimSpace(clusterID)
 	if clusterID == "" || strings.Contains(clusterID, "/") {
-		return Credential{}, errors.New("Platform cluster ID is invalid")
+		return Credential{}, errors.New("platform cluster ID is invalid")
 	}
 	if ttl < 0 || ttl > time.Hour || (ttl > 0 && ttl < time.Minute) {
-		return Credential{}, errors.New("Platform credential TTL must be between one minute and one hour")
+		return Credential{}, errors.New("platform credential TTL must be between one minute and one hour")
 	}
 
 	payload := struct {
@@ -99,19 +99,19 @@ func (c *Client) Exchange(
 
 	httpClient := *c.httpClient
 	httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
-		return errors.New("Platform credential exchange redirects are not allowed")
+		return errors.New("platform credential exchange redirects are not allowed")
 	}
 	response, err := httpClient.Do(req)
 	if err != nil {
-		return Credential{}, fmt.Errorf("Platform credential exchange: %w", err)
+		return Credential{}, fmt.Errorf("platform credential exchange: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
 	if err != nil {
 		return Credential{}, fmt.Errorf("read Platform credential exchange: %w", err)
 	}
 	if len(responseBody) > responseLimit {
-		return Credential{}, errors.New("Platform credential response exceeds one MiB")
+		return Credential{}, errors.New("platform credential response exceeds one MiB")
 	}
 	if response.StatusCode != http.StatusCreated {
 		return Credential{}, exchangeError(response.StatusCode, responseBody)
@@ -129,7 +129,7 @@ func (c *Client) Exchange(
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(responseBody, &decoded); err != nil {
-		return Credential{}, errors.New("Platform credential response is invalid JSON")
+		return Credential{}, errors.New("platform credential response is invalid JSON")
 	}
 	dataPlaneURL, err := endpoint.Validate(decoded.Data.Endpoint, "Platform FerricStore endpoint")
 	if err != nil {
@@ -137,10 +137,10 @@ func (c *Client) Exchange(
 	}
 	expiresAt, err := time.Parse(time.RFC3339Nano, decoded.Data.ExpiresAt)
 	if err != nil || !expiresAt.After(time.Now()) {
-		return Credential{}, errors.New("Platform credential response has an invalid expiry")
+		return Credential{}, errors.New("platform credential response has an invalid expiry")
 	}
 	if decoded.Data.Username == "" || decoded.Data.Password == "" {
-		return Credential{}, errors.New("Platform credential response is incomplete")
+		return Credential{}, errors.New("platform credential response is incomplete")
 	}
 
 	return Credential{
@@ -157,13 +157,13 @@ func (c *Client) Exchange(
 func validateControlURL(rawURL string) (*url.URL, error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return nil, errors.New("Platform control URL is invalid")
+		return nil, errors.New("platform control URL is invalid")
 	}
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, errors.New("Platform control URL must not contain credentials, query, or fragment")
+		return nil, errors.New("platform control URL must not contain credentials, query, or fragment")
 	}
-	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && isLoopback(parsed.Hostname())) {
-		return nil, errors.New("Platform control URL must use HTTPS")
+	if parsed.Scheme != "https" && (parsed.Scheme != "http" || !isLoopback(parsed.Hostname())) {
+		return nil, errors.New("platform control URL must use HTTPS")
 	}
 	return parsed, nil
 }
@@ -179,7 +179,7 @@ func exchangeError(status int, body []byte) error {
 	if code == "" {
 		code = "request_failed"
 	}
-	return fmt.Errorf("Platform credential exchange failed with status %d (%s)", status, code)
+	return fmt.Errorf("platform credential exchange failed with status %d (%s)", status, code)
 }
 
 func isLoopback(host string) bool {

@@ -54,7 +54,11 @@ func TestEnterpriseTokenProviderExchangesBeforeOpeningNativeClient(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("close client: %v", err)
+		}
+	})
 	if broker.token != "fsp_sa_control-secret" || broker.cluster != "cluster-id" {
 		t.Fatalf("broker input = %#v", broker)
 	}

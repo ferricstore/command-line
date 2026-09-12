@@ -38,13 +38,13 @@ func (p *EnterpriseTokenProvider) Login(
 	request LoginRequest,
 ) (ProviderResult, error) {
 	if p == nil || p.validator == nil {
-		return ProviderResult{}, errors.New("Enterprise authentication is not configured")
+		return ProviderResult{}, errors.New("enterprise authentication is not configured")
 	}
 	if p.method != profile.AuthMethodEnterpriseSSO && p.method != profile.AuthMethodEnterpriseAPIToken {
-		return ProviderResult{}, errors.New("Enterprise authentication method is invalid")
+		return ProviderResult{}, errors.New("enterprise authentication method is invalid")
 	}
 	if request.Method != p.method {
-		return ProviderResult{}, errors.New("Enterprise authentication method does not match provider")
+		return ProviderResult{}, errors.New("enterprise authentication method does not match provider")
 	}
 	storedProfile := profile.Profile{
 		Name:           request.ProfileName,
@@ -54,10 +54,10 @@ func (p *EnterpriseTokenProvider) Login(
 		Authentication: profile.Authentication{Method: p.method},
 	}
 	if storedProfile.ControlURL == "" || storedProfile.Cluster == "" {
-		return ProviderResult{}, errors.New("Platform control URL and cluster ID are required")
+		return ProviderResult{}, errors.New("platform control URL and cluster ID are required")
 	}
 	if strings.TrimSpace(request.Secret) == "" {
-		return ProviderResult{}, errors.New("Platform token is required")
+		return ProviderResult{}, errors.New("platform token is required")
 	}
 	principal, err := p.validator.ValidateEnterpriseToken(ctx, storedProfile, request.Secret)
 	if err != nil {

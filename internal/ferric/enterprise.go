@@ -22,7 +22,7 @@ func (v EnterpriseTokenValidator) ValidateEnterpriseToken(
 	token string,
 ) (string, error) {
 	if v.Broker == nil {
-		return "", errors.New("Platform API client is not configured")
+		return "", errors.New("platform API client is not configured")
 	}
 	credential, err := v.Broker.Exchange(
 		ctx,
