@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -161,14 +162,12 @@ func (s *memoryCredentialStore) Delete(_ context.Context, name string) error {
 
 type fakeValidator struct {
 	err      error
-	url      string
-	username string
+	profile  profile.Profile
 	password string
 }
 
-func (v *fakeValidator) ValidatePassword(_ context.Context, rawURL, username, password string) error {
-	v.url = rawURL
-	v.username = username
+func (v *fakeValidator) ValidatePassword(_ context.Context, storedProfile profile.Profile, password string) error {
+	v.profile = storedProfile
 	v.password = password
 	return v.err
 }
@@ -284,14 +283,49 @@ func TestPasswordLoginValidatesAndPersists(t *testing.T) {
 	if !result.Stored || result.Principal != request.Username {
 		t.Fatalf("Login() = %#v", result)
 	}
-	if validator.url != request.URL || validator.username != request.Username || validator.password != request.Secret {
-		t.Fatalf("validator input = %q/%q/%q", validator.url, validator.username, validator.password)
+	if validator.profile.URL != request.URL || validator.profile.Authentication.Username != request.Username || validator.password != request.Secret {
+		t.Fatalf("validator input = %#v/%q", validator.profile, validator.password)
 	}
 	if got := credentials.values[result.Profile.CredentialReference()]; got != request.Secret {
 		t.Fatalf("stored credential = %q, want password", got)
 	}
 	if got := profiles.values[request.ProfileName]; got.Authentication.Method != profile.AuthMethodPassword {
 		t.Fatalf("stored profile = %#v", got)
+	}
+}
+
+func TestPasswordLoginNormalizesCACertificatePathBeforeValidationAndPersistence(t *testing.T) {
+	t.Parallel()
+
+	profiles := newMemoryProfileStore()
+	credentials := newMemoryCredentialStore()
+	validator := &fakeValidator{}
+	service := NewService(profiles, credentials, NewPasswordProvider(validator))
+	relativeCAFile := filepath.Join("testdata", "private-ca.pem")
+	wantCAFile, err := filepath.Abs(relativeCAFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := LoginRequest{
+		ProfileName: "production",
+		URL:         "https://store.example.com",
+		CACertFile:  relativeCAFile,
+		Username:    "operator",
+		Secret:      "password",
+		Store:       true,
+	}
+	result, err := service.Login(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if validator.profile.CACertFile != wantCAFile {
+		t.Fatalf("validator CA certificate = %q, want %q", validator.profile.CACertFile, wantCAFile)
+	}
+	if result.Profile.CACertFile != wantCAFile {
+		t.Fatalf("result CA certificate = %q, want %q", result.Profile.CACertFile, wantCAFile)
+	}
+	if stored := profiles.values[request.ProfileName]; stored.CACertFile != wantCAFile {
+		t.Fatalf("stored CA certificate = %q, want %q", stored.CACertFile, wantCAFile)
 	}
 }
 
@@ -334,7 +368,10 @@ func TestPasswordLoginRejectsCredentialsInURL(t *testing.T) {
 	if err == nil {
 		t.Fatal("Login() accepted credentials embedded in the URL")
 	}
-	if validator.url != "" {
+	if strings.Contains(err.Error(), "embedded-secret") {
+		t.Fatal("rejected URL error exposed embedded credentials")
+	}
+	if validator.profile.URL != "" {
 		t.Fatal("credential-bearing URL reached the SDK validator")
 	}
 	if len(profiles.values) != 0 || len(credentials.values) != 0 {

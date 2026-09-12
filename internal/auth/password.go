@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/ferricstore/command-line/internal/endpoint"
@@ -12,7 +13,7 @@ import (
 
 // PasswordValidator verifies OSS FerricStore username/password credentials.
 type PasswordValidator interface {
-	ValidatePassword(context.Context, string, string, string) error
+	ValidatePassword(context.Context, profile.Profile, string) error
 }
 
 // PasswordProvider performs direct OSS username/password login.
@@ -43,18 +44,27 @@ func (p *PasswordProvider) Login(ctx context.Context, request LoginRequest) (Pro
 	if username == "" {
 		username = "default"
 	}
-	if err := p.validator.ValidatePassword(ctx, rawURL, username, request.Secret); err != nil {
+	caCertFile := strings.TrimSpace(request.CACertFile)
+	if caCertFile != "" {
+		caCertFile, err = filepath.Abs(caCertFile)
+		if err != nil {
+			return ProviderResult{}, fmt.Errorf("resolve CA certificate path: %w", err)
+		}
+	}
+	validatedProfile := profile.Profile{
+		Name:       request.ProfileName,
+		URL:        rawURL,
+		CACertFile: caCertFile,
+		Authentication: profile.Authentication{
+			Method:   profile.AuthMethodPassword,
+			Username: username,
+		},
+	}
+	if err := p.validator.ValidatePassword(ctx, validatedProfile, request.Secret); err != nil {
 		return ProviderResult{}, fmt.Errorf("login failed: %w", err)
 	}
 	return ProviderResult{
-		Profile: profile.Profile{
-			Name: request.ProfileName,
-			URL:  rawURL,
-			Authentication: profile.Authentication{
-				Method:   profile.AuthMethodPassword,
-				Username: username,
-			},
-		},
+		Profile:   validatedProfile,
 		Principal: username,
 		Secret:    request.Secret,
 	}, nil

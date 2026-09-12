@@ -2,11 +2,14 @@
 
 Releases are built by GitHub Actions from semantic-version tags. A CLI release
 tag matches the FerricStore OSS and Go SDK release it is based on. For example,
-CLI `v0.11.4` targets FerricStore OSS `v0.11.4` or newer and uses SDK `v0.11.4`.
+CLI `v0.11.11` targets FerricStore OSS `v0.11.11` or newer and uses SDK `v0.11.11`.
 
-`FERRICSTORE_VERSION` is the repository's compatibility source of truth. The
-release workflow rejects a tag when that file, the pinned SDK module, and the
-Git tag do not all match.
+`FERRICSTORE_VERSION` is the CLI compatibility source of truth. The release
+workflow rejects a tag when that file, the pinned SDK module, and the Git tag
+do not all match. `FERRICSTORE_IMAGE_VERSION` and
+`FERRICSTORE_IMAGE_DIGEST` independently pin the newer OSS server image used
+by integration tests, so server patch validation does not force an unrelated
+CLI or SDK release.
 
 Repository administrators must protect `v*` tags from updates/deletion and
 protect the `release` environment with required reviewers. The workflow also
@@ -17,16 +20,19 @@ image to a different source revision.
 ## Prepare
 
 1. Confirm CI and security checks pass on main.
-2. Update `FERRICSTORE_VERSION`, the Go SDK dependency, the pinned OSS Docker
-   image digest, and compatibility documentation together when moving to a new
-   FerricStore release line.
+2. Update `FERRICSTORE_VERSION`, the Go SDK dependency, and compatibility
+   documentation together when moving the CLI to a new FerricStore release
+   line. Update `FERRICSTORE_IMAGE_VERSION` and `FERRICSTORE_IMAGE_DIGEST`
+   together whenever integration tests move to a newer compatible OSS server.
 3. Update CHANGELOG.md.
 4. Run the local validation, version check, and packaging snapshot:
 
        mise exec -- make verify
        mise exec -- make test-container
+       mise exec -- make integration-oss
+       mise exec -- make integration-http
        golangci-lint run ./...
-       mise exec -- ./scripts/verify-release-version.sh v0.11.4
+       mise exec -- ./scripts/verify-release-version.sh v0.11.11
        goreleaser release --snapshot --clean
 
 5. Verify the generated archives in dist/.
@@ -36,8 +42,8 @@ image to a different source revision.
 Create and push an annotated semantic-version tag:
 
 ~~~sh
-git tag -a v0.11.4 -m "Ferric CLI v0.11.4 for FerricStore OSS v0.11.4"
-git push origin v0.11.4
+git tag -a v0.11.11 -m "Ferric CLI v0.11.11 for FerricStore OSS v0.11.11"
+git push origin v0.11.11
 ~~~
 
 The release workflow reruns tests and then publishes:
@@ -47,8 +53,8 @@ The release workflow reruns tests and then publishes:
 - Windows binaries for amd64 and arm64
 - source archive
 - SHA-256 checksum file
-- a distroless GHCR image for Linux amd64 and arm64, tagged `v0.11.4`,
-  `0.11.4`, and `latest`, with an SBOM, build provenance, and a GitHub artifact
+- a distroless GHCR image for Linux amd64 and arm64, tagged `v0.11.11`,
+  `0.11.11`, and `latest`, with an SBOM, build provenance, and a GitHub artifact
   attestation
 
 GitHub initially creates a new container package as private. After the first

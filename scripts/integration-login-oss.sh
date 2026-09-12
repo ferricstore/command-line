@@ -3,21 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-oss_version="$(tr -d '[:space:]' <FERRICSTORE_VERSION)"
-if [[ -n "${FERRICSTORE_IMAGE:-}" ]]; then
-  image="$FERRICSTORE_IMAGE"
-else
-  image_repository="ghcr.io/ferricstore/ferricstore"
-  image_tag="${oss_version#v}"
-  image_digest="$(tr -d '[:space:]' <FERRICSTORE_IMAGE_DIGEST)"
-  resolved_digest="$(docker buildx imagetools inspect "$image_repository:$image_tag" | awk '$1 == "Digest:" { print $2; exit }')"
-  if [[ -z "$resolved_digest" || "$resolved_digest" != "$image_digest" ]]; then
-    echo "FerricStore $oss_version resolves to ${resolved_digest:-no digest}, expected $image_digest" >&2
-    echo "update FERRICSTORE_IMAGE_DIGEST together with FERRICSTORE_VERSION" >&2
-    exit 1
-  fi
-  image="$image_repository@$image_digest"
-fi
+image="$(./scripts/resolve-ferricstore-image.sh)"
 suffix="$$-$RANDOM"
 bootstrap_name="ferric-command-line-login-bootstrap-$suffix"
 server_name="ferric-command-line-login-$suffix"
@@ -29,7 +15,7 @@ binary_path="$binary_dir/ferric"
 container_image="ferric-command-line-oss-integration:$suffix"
 export FERRIC_CONFIG_DIR="$binary_dir/config"
 unset FERRIC_PROFILE
-unset FERRIC_URL FERRIC_USERNAME FERRIC_PASSWORD FERRIC_PASSWORD_FILE
+unset FERRIC_URL FERRIC_USERNAME FERRIC_PASSWORD FERRIC_PASSWORD_FILE FERRIC_CA_CERT_FILE
 unset FERRIC_CONTROL_URL FERRIC_ORGANIZATION FERRIC_CLUSTER
 unset FERRIC_API_TOKEN FERRIC_API_TOKEN_FILE
 
@@ -48,10 +34,13 @@ cleanup() {
 trap cleanup EXIT
 
 run_go_test() {
-  if command -v mise >/dev/null 2>&1; then
+  if command -v go >/dev/null 2>&1; then
+    go test "$@"
+  elif command -v mise >/dev/null 2>&1; then
     mise exec -- go test "$@"
   else
-    go test "$@"
+    echo "go or mise is required" >&2
+    return 1
   fi
 }
 
@@ -100,10 +89,13 @@ wait_for_test ./internal/auth '^TestIntegrationOSSLogin$'
 export FERRICSTORE_OSS_CLI_TEST=1
 run_go_test -tags=integration -count=1 -run '^TestIntegrationOSSWorkflowQueryAndSchedule$' ./internal/cli
 
-if command -v mise >/dev/null 2>&1; then
+if command -v go >/dev/null 2>&1; then
+  go build -o "$binary_path" ./cmd/ferric
+elif command -v mise >/dev/null 2>&1; then
   mise exec -- go build -o "$binary_path" ./cmd/ferric
 else
-  go build -o "$binary_path" ./cmd/ferric
+  echo "go or mise is required" >&2
+  exit 1
 fi
 
 login_output="$(printf '%s\n' "$FERRICSTORE_OSS_PASSWORD" | "$binary_path" auth login --url "ferric://$FERRICSTORE_OSS_ADDR" --username "$FERRICSTORE_OSS_USERNAME" --password-stdin --no-store)"

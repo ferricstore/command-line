@@ -10,6 +10,7 @@ import (
 	"github.com/ferricstore/command-line/internal/buildinfo"
 	"github.com/ferricstore/command-line/internal/connection"
 	"github.com/ferricstore/command-line/internal/profile"
+	ferricstore "github.com/ferricstore/ferricstore-go"
 )
 
 type cliConnectionClient struct {
@@ -149,6 +150,37 @@ func TestServerPingReportsMissingSavedProfile(t *testing.T) {
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), `load profile "missing"`) {
 		t.Fatalf("Execute() error = %v", err)
+	}
+}
+
+func TestServerClientCommandReportsHTTPSAsNativeOnly(t *testing.T) {
+	t.Parallel()
+
+	client := &cliConnectionClient{commandErr: ferricstore.ErrHTTPConnectionAffineCommand}
+	stored := profile.Profile{
+		Name: "production",
+		URL:  "https://store.example.com",
+		Authentication: profile.Authentication{
+			Method:   profile.AuthMethodPassword,
+			Username: "operator",
+		},
+	}
+	profiles := &cliProfileStore{values: map[string]profile.Profile{"production": stored}}
+	credentials := &cliCredentialStore{values: map[string]string{"production": "secret"}}
+	service := connection.NewService(
+		profiles,
+		credentials,
+		&cliConnectionProvider{method: profile.AuthMethodPassword, client: client},
+	)
+	command := New(buildinfo.Info{}, WithConnectionService(service))
+	command.SetArgs([]string{"--profile", "production", "server", "client", "info"})
+
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "requires ferric:// or ferrics://") {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !client.closed {
+		t.Fatal("native-only failure did not close the client")
 	}
 }
 

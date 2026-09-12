@@ -44,6 +44,7 @@ func TestEnterpriseTokenProviderExchangesBeforeOpeningNativeClient(t *testing.T)
 		ControlURL:   "https://platform.example.com",
 		Organization: "acme",
 		Cluster:      "cluster-id",
+		CACertFile:   "/etc/ferric/data-plane-ca.pem",
 		Authentication: profile.Authentication{
 			Method: profile.AuthMethodEnterpriseAPIToken,
 		},
@@ -57,8 +58,12 @@ func TestEnterpriseTokenProviderExchangesBeforeOpeningNativeClient(t *testing.T)
 	if broker.token != "fsp_sa_control-secret" || broker.cluster != "cluster-id" {
 		t.Fatalf("broker input = %#v", broker)
 	}
-	if factory.url != broker.credential.Endpoint || factory.username != broker.credential.Username || factory.password != broker.credential.Password {
-		t.Fatalf("native factory input = %q/%q/%q", factory.url, factory.username, factory.password)
+	if factory.profile.URL != broker.credential.Endpoint ||
+		factory.profile.CACertFile != stored.CACertFile ||
+		factory.profile.Authentication.Method != profile.AuthMethodPassword ||
+		factory.profile.Authentication.Username != broker.credential.Username ||
+		factory.password != broker.credential.Password {
+		t.Fatalf("data-plane factory input = %#v/%q", factory.profile, factory.password)
 	}
 	if factory.password == broker.token {
 		t.Fatal("Platform control token was forwarded to the data plane")

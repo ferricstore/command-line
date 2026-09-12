@@ -35,11 +35,15 @@ func (v EnterpriseTokenValidator) ValidateEnterpriseToken(
 	if err != nil {
 		return "", err
 	}
-	client, err := (PasswordClientFactory{}).NewPasswordClient(
-		credential.Endpoint,
-		credential.Username,
-		credential.Password,
-	)
+	dataPlaneProfile := profile.Profile{
+		URL:        credential.Endpoint,
+		CACertFile: storedProfile.CACertFile,
+		Authentication: profile.Authentication{
+			Method:   profile.AuthMethodPassword,
+			Username: credential.Username,
+		},
+	}
+	client, err := (PasswordClientFactory{}).NewPasswordClient(ctx, dataPlaneProfile, credential.Password)
 	if err != nil {
 		return "", err
 	}

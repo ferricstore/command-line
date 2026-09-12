@@ -21,6 +21,7 @@ type LoginRequest struct {
 	ProfileName  string
 	Method       profile.AuthMethod
 	URL          string
+	CACertFile   string
 	ControlURL   string
 	Organization string
 	Cluster      string

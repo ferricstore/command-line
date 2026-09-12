@@ -68,5 +68,13 @@ func (p *EnterpriseTokenProvider) Open(
 	if err != nil {
 		return nil, err
 	}
-	return p.factory.NewPasswordClient(credential.Endpoint, credential.Username, credential.Password)
+	dataPlaneProfile := profile.Profile{
+		URL:        credential.Endpoint,
+		CACertFile: storedProfile.CACertFile,
+		Authentication: profile.Authentication{
+			Method:   profile.AuthMethodPassword,
+			Username: credential.Username,
+		},
+	}
+	return p.factory.NewPasswordClient(ctx, dataPlaneProfile, credential.Password)
 }

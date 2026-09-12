@@ -13,6 +13,9 @@ Versioning.
 - FerricStore Go SDK integration boundary.
 - OSS username/password login with hidden terminal input, stdin support,
   profile storage, and operating-system keyring storage.
+- HTTPS username/password support through the FerricStore HTTP API, including
+  HTTP/2, reverse-proxy base paths, private CA files, per-command ACL coverage,
+  plaintext credential rejection, and cross-origin redirect protection.
 - Real protected-mode OSS login integration tests and mocked Enterprise
   authentication provider contracts.
 - Docker-backed protected-mode OSS CLI integration for FQL, query plans,
@@ -37,8 +40,8 @@ Versioning.
 - Partition-scoped FQL convenience reads and workflow search predicates for
   attributes and per-state metadata.
 - Workflow-owned one-shot, delayed, interval, and cron schedule management.
-- FerricStore Go SDK v0.11.4 schedule contracts, including interval catch-up,
-  overlap/coalescing state, and rich recurrence status output.
+- FerricStore Go SDK v0.11.11 contracts, including HTTP execution, interval
+  catch-up, overlap/coalescing state, and rich recurrence status output.
 - Server diagnostics and configuration, cluster operations, OSS ACL
   administration, namespace/quota usage, and one-shot Pub/Sub operations.
 - Workflow governance commands for approvals, circuit breakers, effects,
@@ -53,8 +56,8 @@ Versioning.
   explicit CLI-owned schemas for typed SDK output.
 - Focused command-safety and output-contract packages that keep policy and
   presentation concerns out of command construction.
-- Go 1.25.12 minimum and Go 1.26.5 release builds, excluding known reachable
-  standard-library vulnerabilities in the former Go 1.24 baseline.
+- Go 1.26.7 minimum and release builds, excluding known reachable
+  standard-library vulnerabilities in older supported toolchains.
 - Formatting, linting, unit, race, vulnerability, and CodeQL checks.
 - Cross-platform release packaging for Linux, macOS, and Windows.
 - A distroless, non-root Ferric utility image for Linux amd64 and arm64 with

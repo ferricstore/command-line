@@ -25,11 +25,11 @@ go install github.com/ferricstore/command-line/cmd/ferric@latest
 ~~~
 
 CLI release tags match the FerricStore OSS release they are based on. For
-example, CLI `v0.11.4` uses SDK `v0.11.4` and targets FerricStore OSS `v0.11.4`
+example, CLI `v0.11.11` uses SDK `v0.11.11` and targets FerricStore OSS `v0.11.11`
 or newer:
 
 ~~~sh
-go install github.com/ferricstore/command-line/cmd/ferric@v0.11.4
+go install github.com/ferricstore/command-line/cmd/ferric@v0.11.11
 ~~~
 
 Release archives for Linux, macOS, and Windows will also be available from the
@@ -39,9 +39,9 @@ After the first release is published and the GHCR package is made public,
 Docker, Kubernetes utility pods, and CI can run the official one-shot image:
 
 ~~~sh
-docker run --rm ghcr.io/ferricstore/command-line:v0.11.4 version
+docker run --rm ghcr.io/ferricstore/command-line:v0.11.11 version
 kubectl run ferric --rm -it --restart=Never \
-  --image=ghcr.io/ferricstore/command-line:v0.11.4 -- version
+  --image=ghcr.io/ferricstore/command-line:v0.11.11 -- version
 ~~~
 
 The same release publishes one image index for Linux amd64 and arm64. See the
@@ -143,6 +143,23 @@ printf '%s\n' "$FERRIC_PASSWORD" | ferric auth login \
   --password-stdin
 ~~~
 
+For the FerricStore HTTP API, use HTTPS. Basic username/password credentials
+are rejected on plaintext HTTP:
+
+~~~sh
+printf '%s\n' "$FERRIC_PASSWORD" | ferric auth login \
+  --url https://store.example.com/prod \
+  --username operator \
+  --ca-cert /etc/ferric/ca.pem \
+  --password-stdin
+~~~
+
+The optional URL path is preserved for reverse proxies and API Gateway-style
+deployments. `--ca-cert` appends a private PEM CA to the operating system trust
+roots; normal hostname verification remains enabled. Relative CA paths are
+converted to absolute paths before a profile is saved, so subsequent commands
+do not depend on their working directory.
+
 Successful login stores non-secret profile metadata in the user configuration
 directory and stores the password in the operating-system keyring. Use
 --no-store to validate credentials without persisting either.
@@ -163,14 +180,13 @@ Logout does not change or revoke an OSS ACL password on the server. Use
 `ferric profile delete <name>` when both the connection metadata and its local
 credential should be removed.
 
-Both ferric:// and ferrics:// support username/password login. Transport
-selection is the user's or administrator's responsibility; ferrics:// adds
-TLS.
+`ferric://`, `ferrics://`, and `https://` support username/password login.
+Authenticated HTTP requires `https://`; the CLI has no insecure TLS bypass.
 
 After login, normal commands load the selected profile and password, open an
 authenticated SDK client, execute the operation, and close it. Login does not
-leave a background TCP process running. The SDK reapplies authentication if it
-has to reconnect while a command is running.
+leave a background process running. The SDK reapplies authentication to native
+connections and to every HTTPS request.
 
 ## Platform Login
 
@@ -226,9 +242,25 @@ FERRIC_PASSWORD_FILE=/run/secrets/ferric-password \
 ferric server ping
 ~~~
 
+For HTTPS with a private CA:
+
+~~~sh
+FERRIC_URL=https://store.example.com/prod \
+FERRIC_USERNAME=operator \
+FERRIC_PASSWORD_FILE=/run/secrets/ferric-password \
+FERRIC_CA_CERT_FILE=/run/config/ferric-ca.pem \
+ferric server ping
+~~~
+
 Set exactly one of `FERRIC_PASSWORD` or `FERRIC_PASSWORD_FILE`. The URL,
 username, and secret form one atomic credential source; the CLI never fills a
 missing environment value from a saved profile or keyring.
+`FERRIC_CA_CERT_FILE`, when set, must be an absolute path.
+
+The server authenticates the user and checks their ACL for every HTTP command.
+The CLI never caches authorization. Transactions and connection-specific
+`server client` commands require `ferric://` or `ferrics://`; one-shot Pub/Sub
+publish and inspection commands work over HTTPS.
 
 Enterprise builds use `FERRIC_CONTROL_URL`, `FERRIC_ORGANIZATION`,
 `FERRIC_CLUSTER`, and exactly one of `FERRIC_API_TOKEN` or
@@ -276,14 +308,14 @@ repository. See [docs/authentication.md](docs/authentication.md).
 
 ## Compatibility
 
-This revision uses FerricStore Go SDK v0.11.4 and targets FerricStore 0.11.4 or
+This revision uses FerricStore Go SDK v0.11.11 and targets FerricStore 0.11.11 or
 newer. FQL query, query-index, and the current typed schedule response contracts
 require that server generation.
 
 ## Development
 
-Go 1.25.12 or newer is supported. Older toolchains contain reachable standard
-library vulnerabilities. The repository pins Go 1.26.5 for development and
+Go 1.26.7 or newer is supported. Older toolchains contain reachable standard
+library vulnerabilities. The repository pins Go 1.26.7 for development and
 release builds through mise:
 
 ~~~sh
@@ -301,13 +333,14 @@ mise exec -- make test
 mise exec -- make test-container
 mise exec -- make test-race
 mise exec -- make integration-oss
+mise exec -- make integration-http
 mise exec -- make lint
 mise exec -- make snapshot
 ~~~
 
 ## Releases
 
-Pushing a tag matching the supported FerricStore line, such as `v0.11.4`, runs
+Pushing a tag matching the supported FerricStore line, such as `v0.11.11`, runs
 the complete test suite and publishes compressed binaries plus checksums
 through GoReleaser. The release fails before publishing if the tag, the version
 in `FERRICSTORE_VERSION`, and the pinned Go SDK version do not match. See

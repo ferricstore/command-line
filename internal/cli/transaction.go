@@ -10,6 +10,7 @@ import (
 
 	"github.com/ferricstore/command-line/internal/commandsafety"
 	"github.com/ferricstore/command-line/internal/connection"
+	"github.com/ferricstore/command-line/internal/ferric"
 	"github.com/ferricstore/command-line/internal/profile"
 	ferricstore "github.com/ferricstore/ferricstore-go"
 	"github.com/spf13/cobra"
@@ -49,7 +50,10 @@ func newStoreTransactionCommand(dependencies dependencies) *cobra.Command {
 			if index, sensitive := commandsafety.FirstRequiringConfirmation(commands); sensitive && !yes {
 				return fmt.Errorf("transaction command %d requires --yes", index+1)
 			}
-			return runNetworkCommand(command, dependencies, "execute transaction", func(ctx context.Context, client connection.Client, _ profile.Profile) (any, error) {
+			return runNetworkCommand(command, dependencies, "execute transaction", func(ctx context.Context, client connection.Client, storedProfile profile.Profile) (any, error) {
+				if err := ferric.RequireConnectionAffine(storedProfile.URL); err != nil {
+					return nil, err
+				}
 				starter, err := requireClientCapability[transactionStarter](client, "SDK transactions")
 				if err != nil {
 					return nil, err

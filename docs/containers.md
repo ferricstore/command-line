@@ -10,8 +10,8 @@ arm64. Image tags follow the same FerricStore OSS compatibility version as the
 CLI release:
 
 ~~~sh
-docker run --rm ghcr.io/ferricstore/command-line:v0.11.4 version
-docker run --rm ghcr.io/ferricstore/command-line:v0.11.4 server ping
+docker run --rm ghcr.io/ferricstore/command-line:v0.11.11 version
+docker run --rm ghcr.io/ferricstore/command-line:v0.11.11 server ping
 ~~~
 
 Use an immutable digest instead of a tag when deployment reproducibility is
@@ -32,13 +32,30 @@ docker run --rm \
   -e FERRIC_USERNAME=operator \
   -e FERRIC_PASSWORD_FILE=/run/secrets/ferric-password \
   --mount type=bind,source="$PWD/ferric-password",target=/run/secrets/ferric-password,readonly \
-  ghcr.io/ferricstore/command-line:v0.11.4 \
+  ghcr.io/ferricstore/command-line:v0.11.11 \
   server ping
 ~~~
 
 `FERRIC_PASSWORD` is also supported when the runtime injects secrets directly
-into the environment. The CLI accepts both `ferric://` and `ferrics://`; the
-deployment owner chooses the transport.
+into the environment. The CLI accepts `ferric://`, `ferrics://`, and
+authenticated `https://` endpoints.
+
+For the HTTP API with a private CA, mount the CA separately from the password:
+
+~~~sh
+docker run --rm \
+  --network application \
+  -e FERRIC_URL=https://ferricstore:8080 \
+  -e FERRIC_USERNAME=operator \
+  -e FERRIC_PASSWORD_FILE=/run/secrets/ferric-password \
+  -e FERRIC_CA_CERT_FILE=/run/config/ferric-ca.pem \
+  --mount type=bind,source="$PWD/ferric-password",target=/run/secrets/ferric-password,readonly \
+  --mount type=bind,source="$PWD/ferric-ca.pem",target=/run/config/ferric-ca.pem,readonly \
+  ghcr.io/ferricstore/command-line:v0.11.11 \
+  server ping
+~~~
+
+Username/password authentication is never sent over plaintext `http://`.
 
 The image supports a read-only root filesystem, all Linux capabilities
 dropped, and `no-new-privileges`:
@@ -46,7 +63,7 @@ dropped, and `no-new-privileges`:
 ~~~sh
 docker run --rm --read-only --cap-drop=ALL \
   --security-opt=no-new-privileges \
-  ghcr.io/ferricstore/command-line:v0.11.4 version
+  ghcr.io/ferricstore/command-line:v0.11.11 version
 ~~~
 
 ## Kubernetes Utility Pod
@@ -56,7 +73,7 @@ image like a curl pod:
 
 ~~~sh
 kubectl run ferric --rm -it --restart=Never \
-  --image=ghcr.io/ferricstore/command-line:v0.11.4 \
+  --image=ghcr.io/ferricstore/command-line:v0.11.11 \
   -- version
 ~~~
 
@@ -79,7 +96,7 @@ spec:
       type: RuntimeDefault
   containers:
     - name: ferric
-      image: ghcr.io/ferricstore/command-line:v0.11.4
+      image: ghcr.io/ferricstore/command-line:v0.11.11
       args: ["server", "ping"]
       env:
         - name: FERRIC_URL
@@ -116,10 +133,10 @@ The binary is at `/usr/local/bin/ferric`, so another image can copy it without
 installing Go:
 
 ~~~dockerfile
-FROM ghcr.io/ferricstore/command-line:v0.11.4 AS ferric-cli
+FROM ghcr.io/ferricstore/command-line:v0.11.11 AS ferric-cli
 FROM debian:stable-slim
 COPY --from=ferric-cli /usr/local/bin/ferric /usr/local/bin/ferric
 ~~~
 
 The destination image must provide trusted CA certificates when it uses
-`ferrics://`.
+`ferrics://` or `https://` with a private CA.

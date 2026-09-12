@@ -60,12 +60,14 @@ func (s *cliCredentialStore) Delete(_ context.Context, name string) error {
 
 type cliValidator struct {
 	err      error
+	profile  profile.Profile
 	username string
 	password string
 }
 
-func (v *cliValidator) ValidatePassword(_ context.Context, _, username, password string) error {
-	v.username = username
+func (v *cliValidator) ValidatePassword(_ context.Context, storedProfile profile.Profile, password string) error {
+	v.profile = storedProfile
+	v.username = storedProfile.Authentication.Username
 	v.password = password
 	return v.err
 }
@@ -152,7 +154,8 @@ func TestLoginCommandReadsPasswordFromStdinAndStores(t *testing.T) {
 	command.SetArgs([]string{
 		"auth", "login",
 		"--profile", "production",
-		"--url", "ferric://store.example.com:6388",
+		"--url", "https://store.example.com/proxy",
+		"--ca-cert", "/etc/ferric/ca.pem",
 		"--username", "operator",
 		"--password-stdin",
 	})
@@ -166,6 +169,9 @@ func TestLoginCommandReadsPasswordFromStdinAndStores(t *testing.T) {
 	storedProfile := profiles.values["production"]
 	if credentials.values[storedProfile.CredentialReference()] != "super-secret" {
 		t.Fatal("credential was not stored")
+	}
+	if validator.profile.CACertFile != "/etc/ferric/ca.pem" || profiles.values["production"].CACertFile != "/etc/ferric/ca.pem" {
+		t.Fatalf("CA certificate was not preserved: validator=%#v stored=%#v", validator.profile, profiles.values["production"])
 	}
 	if strings.Contains(output.String(), "super-secret") {
 		t.Fatal("command output exposed the password")
