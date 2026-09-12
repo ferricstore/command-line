@@ -48,10 +48,10 @@ run_go() {
   fi
 }
 
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=FerricStore CLI Test CA" -keyout "$tls_dir/ca.key" -out "$tls_dir/ca.pem" >/dev/null 2>&1
-openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" -keyout "$tls_dir/server.key" -out "$tls_dir/server.csr" >/dev/null 2>&1
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=FerricStore CLI Test CA" -keyout "$tls_dir/ca.key" -out "$tls_dir/ca.pem" >/dev/null
+openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" -keyout "$tls_dir/server.key" -out "$tls_dir/server.csr" >/dev/null
 printf '%s\n' "subjectAltName=DNS:localhost,IP:127.0.0.1" "extendedKeyUsage=serverAuth" >"$tls_dir/extensions.cnf"
-openssl x509 -req -in "$tls_dir/server.csr" -CA "$tls_dir/ca.pem" -CAkey "$tls_dir/ca.key" -CAcreateserial -days 1 -out "$tls_dir/server.pem" -extfile "$tls_dir/extensions.cnf" >/dev/null 2>&1
+openssl x509 -req -in "$tls_dir/server.csr" -CA "$tls_dir/ca.pem" -CAkey "$tls_dir/ca.key" -CAcreateserial -days 1 -out "$tls_dir/server.pem" -extfile "$tls_dir/extensions.cnf" >/dev/null
 chmod 700 "$tls_dir"
 chmod 600 "$tls_dir/ca.key"
 chmod 644 "$tls_dir/ca.pem" "$tls_dir/server.pem" "$tls_dir/server.key"
