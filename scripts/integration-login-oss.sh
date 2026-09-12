@@ -3,8 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-oss_version="$(tr -d '[:space:]' <FERRICSTORE_VERSION)"
-image="${FERRICSTORE_IMAGE:-quay.io/ferricstore/ferricstore:${oss_version#v}@sha256:d9f488539f0d6c1a513d2315e7a9c2947cc795b393f3774c9de8ba5e5b5c21b5}"
+image="$(./scripts/resolve-ferricstore-image.sh)"
 suffix="$$-$RANDOM"
 bootstrap_name="ferric-command-line-login-bootstrap-$suffix"
 server_name="ferric-command-line-login-$suffix"

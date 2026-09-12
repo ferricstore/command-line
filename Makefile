@@ -14,6 +14,7 @@ container:
 test:
 	$(GO) test ./...
 	./scripts/verify-release-version_test.sh
+	./scripts/resolve-ferricstore-image_test.sh
 
 test-container:
 	./scripts/test-container.sh
@@ -43,6 +44,7 @@ verify:
 	$(GO) vet ./...
 	$(GO) test ./...
 	./scripts/verify-release-version_test.sh
+	./scripts/resolve-ferricstore-image_test.sh
 
 snapshot:
 	$(GORELEASER) release --snapshot --clean

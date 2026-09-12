@@ -76,12 +76,72 @@ type staticPasswordReader struct {
 	password string
 }
 
+type cliEnterpriseValidator struct {
+	profile profile.Profile
+	token   string
+}
+
+func (v *cliEnterpriseValidator) ValidateEnterpriseToken(
+	_ context.Context,
+	storedProfile profile.Profile,
+	token string,
+) (string, error) {
+	v.profile = storedProfile
+	v.token = token
+	return "deploy-bot", nil
+}
+
+func TestLoginCommandStoresPlatformTokenForExchangeProvider(t *testing.T) {
+	t.Parallel()
+
+	profiles := &cliProfileStore{values: make(map[string]profile.Profile)}
+	credentials := &cliCredentialStore{values: make(map[string]string)}
+	validator := &cliEnterpriseValidator{}
+	service := auth.NewService(
+		profiles,
+		credentials,
+		auth.NewEnterpriseTokenProvider(profile.AuthMethodEnterpriseAPIToken, validator),
+	)
+	command := New(buildinfo.Info{}, WithLoginService(service))
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetIn(strings.NewReader("fsp_sa_control-secret\n"))
+	command.SetArgs([]string{
+		"auth", "login",
+		"--profile", "production",
+		"--method", "enterprise-api-token",
+		"--control-url", "https://platform.example.com",
+		"--organization", "acme",
+		"--cluster", "cluster-id",
+		"--token-stdin",
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	storedProfile := profiles.values["production"]
+	if storedProfile.ControlURL != "https://platform.example.com" || storedProfile.Cluster != "cluster-id" {
+		t.Fatalf("stored profile = %#v", storedProfile)
+	}
+	if credentials.values[storedProfile.CredentialReference()] != "fsp_sa_control-secret" {
+		t.Fatal("Platform token was not stored in the credential store")
+	}
+	if validator.profile.URL != "" || validator.token != "fsp_sa_control-secret" {
+		t.Fatalf("validator input = %#v/%q", validator.profile, validator.token)
+	}
+	if strings.Contains(output.String(), validator.token) {
+		t.Fatal("command output exposed the Platform token")
+	}
+}
+
 func (r staticPasswordReader) ReadPassword(_ io.Reader, _ io.Writer) (string, error) {
 	return r.password, nil
 }
 
 func TestLoginCommandReadsPasswordFromStdinAndStores(t *testing.T) {
 	t.Parallel()
+	caCertFile := filepath.Join(t.TempDir(), "ca.pem")
 
 	profiles := &cliProfileStore{values: make(map[string]profile.Profile)}
 	credentials := &cliCredentialStore{values: make(map[string]string)}
@@ -96,7 +156,7 @@ func TestLoginCommandReadsPasswordFromStdinAndStores(t *testing.T) {
 		"auth", "login",
 		"--profile", "production",
 		"--url", "https://store.example.com/proxy",
-		"--ca-cert", "/etc/ferric/ca.pem",
+		"--ca-cert", caCertFile,
 		"--username", "operator",
 		"--password-stdin",
 	})
@@ -107,10 +167,11 @@ func TestLoginCommandReadsPasswordFromStdinAndStores(t *testing.T) {
 	if validator.password != "super-secret" || validator.username != "operator" {
 		t.Fatalf("validator received %q/%q", validator.username, validator.password)
 	}
-	if credentials.values["production"] != "super-secret" {
+	storedProfile := profiles.values["production"]
+	if credentials.values[storedProfile.CredentialReference()] != "super-secret" {
 		t.Fatal("credential was not stored")
 	}
-	if validator.profile.CACertFile != "/etc/ferric/ca.pem" || profiles.values["production"].CACertFile != "/etc/ferric/ca.pem" {
+	if validator.profile.CACertFile != caCertFile || profiles.values["production"].CACertFile != caCertFile {
 		t.Fatalf("CA certificate was not preserved: validator=%#v stored=%#v", validator.profile, profiles.values["production"])
 	}
 	if strings.Contains(output.String(), "super-secret") {

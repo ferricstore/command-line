@@ -1,6 +1,7 @@
 # Container Usage
 
-The official image is a small, one-shot Ferric CLI utility. Its entrypoint is
+After the first release is published and the GHCR package is made public, the
+official image is a small, one-shot Ferric CLI utility. Its entrypoint is
 `ferric`, so arguments after the image name are normal CLI arguments. It does
 not run a server or keep a background connection alive.
 

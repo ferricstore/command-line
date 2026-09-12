@@ -23,7 +23,8 @@ if command -v go >/dev/null 2>&1; then
 fi
 
 failure_output="$(mktemp)"
-trap 'rm -f "$failure_output"' EXIT
+bad_digest_file="$(mktemp)"
+trap 'rm -f "$failure_output" "$bad_digest_file"' EXIT
 
 if "$script" v9.9.9 "$oss_version" >"$failure_output" 2>&1; then
   echo "mismatched release and SDK versions unexpectedly passed" >&2
@@ -51,6 +52,17 @@ if "$script" "" "$oss_version" >"$failure_output" 2>&1; then
 fi
 if ! grep -Fq "usage:" "$failure_output"; then
   echo "empty-tag error did not print usage" >&2
+  cat "$failure_output" >&2
+  exit 1
+fi
+
+printf '%s\n' 'sha256:not-a-real-digest' >"$bad_digest_file"
+if FERRICSTORE_IMAGE_DIGEST_FILE="$bad_digest_file" "$script" "$oss_version" "$oss_version" >"$failure_output" 2>&1; then
+  echo "invalid OSS image digest unexpectedly passed" >&2
+  exit 1
+fi
+if ! grep -Fq "must contain one sha256 image digest" "$failure_output"; then
+  echo "invalid image digest error was not actionable" >&2
   cat "$failure_output" >&2
   exit 1
 fi

@@ -29,14 +29,20 @@ func newQueueCommand(dependencies dependencies) *cobra.Command {
 	}
 	command.AddCommand(
 		newQueueEnqueueCommand(dependencies),
+		newFlowCreateManyCommand(dependencies, "queue"),
 		newQueueClaimCommand(dependencies),
+		newQueueReclaimCommand(dependencies),
 		newFlowDescribeCommand(dependencies, "queue"),
 		newFlowListCommand(dependencies, "queue"),
 		newQueueExtendCommand(dependencies),
 		newFlowCompleteCommand(dependencies, "queue"),
+		newFlowCompleteManyCommand(dependencies, "queue"),
 		newFlowRetryCommand(dependencies, "queue"),
+		newFlowRetryManyCommand(dependencies, "queue"),
 		newFlowFailCommand(dependencies, "queue"),
+		newFlowFailManyCommand(dependencies, "queue"),
 		newFlowCancelCommand(dependencies, "queue"),
+		newFlowCancelManyCommand(dependencies, "queue"),
 		newFlowHistoryCommand(dependencies, "queue"),
 		newFlowStatsCommand(dependencies, "queue"),
 		newFlowPolicyCommand(dependencies, "queue"),
@@ -101,6 +107,9 @@ func newQueueClaimCommand(dependencies dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := validateBlockingWait(dependencies, flags.block, "--wait"); err != nil {
+				return err
+			}
 			return runNetworkCommand(command, dependencies, "claim jobs", func(ctx context.Context, client connection.Client, _ profile.Profile) (any, error) {
 				claimer, err := requireClientCapability[flowJobClaimer](client, "FerricFlow job claims")
 				if err != nil {
@@ -111,7 +120,7 @@ func newQueueClaimCommand(dependencies dependencies) *cobra.Command {
 			})
 		},
 	}
-	flags.add(command)
+	flags.add(command, false)
 	return command
 }
 
@@ -631,15 +640,19 @@ type flowPolicySetFlags struct {
 
 func newFlowPolicySetCommand(dependencies dependencies, service string) *cobra.Command {
 	var flags flowPolicySetFlags
+	var yes bool
 	command := &cobra.Command{
 		Use:   "set <type>",
 		Short: "Set retry, deadline, index, or state-mode policy",
-		Long: "Patch policy fields for a type. State modes use state=FIFO or state=PARALLEL. " +
+		Long: "Patch policy fields for a type. This command requires --yes. State modes use state=FIFO or state=PARALLEL. " +
 			"Omitted fields retain their current values.",
-		Example: "  ferric " + service + " policy set email --max-retries 5 --backoff exponential --base-delay 1s --max-delay 1m\n" +
-			"  ferric " + service + " policy set email --state-mode queued=FIFO",
+		Example: "  ferric " + service + " policy set email --max-retries 5 --backoff exponential --base-delay 1s --max-delay 1m --yes\n" +
+			"  ferric " + service + " policy set email --state-mode queued=FIFO --yes",
 		Args: cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
+			if err := requireProtocolConfirmation(yes, service+" policy update", []any{"FLOW.POLICY.SET"}); err != nil {
+				return err
+			}
 			options, err := flags.options(command)
 			if err != nil {
 				return err
@@ -667,6 +680,7 @@ func newFlowPolicySetCommand(dependencies dependencies, service string) *cobra.C
 	command.Flags().BoolVar(&flags.clearIndexedAttributes, "clear-indexed-attributes", false, "remove all indexed attributes")
 	command.Flags().StringVar(&flags.indexedStateMeta, "indexed-state-meta", "", "state metadata field to index; use an empty value to clear")
 	command.Flags().StringArrayVar(&flags.stateModes, "state-mode", nil, "state claim mode as state=FIFO or state=PARALLEL; repeatable")
+	command.Flags().BoolVar(&yes, "yes", false, "confirm the policy update")
 	return command
 }
 

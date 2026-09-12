@@ -81,7 +81,11 @@ func TestIntegrationOSSLogin(t *testing.T) {
 	if !result.Stored || result.Principal != username {
 		t.Fatalf("Login() = %#v", result)
 	}
-	if credentials.values["oss-integration"] != password {
+	storedProfile, err := profiles.Get(ctx, "oss-integration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credentials.values[storedProfile.CredentialReference()] != password {
 		t.Fatal("validated OSS credential was not persisted")
 	}
 
@@ -114,7 +118,10 @@ func TestIntegrationOSSLogin(t *testing.T) {
 	if err == nil {
 		t.Fatal("login with an invalid OSS password succeeded")
 	}
-	if _, ok := credentials.values["wrong-password"]; ok {
+	if _, profileErr := profiles.Get(ctx, "wrong-password"); !errors.Is(profileErr, profile.ErrNotFound) {
+		t.Fatalf("invalid OSS profile persistence error = %v, want profile not found", profileErr)
+	}
+	if len(credentials.values) != 1 {
 		t.Fatal("invalid OSS credential was persisted")
 	}
 }

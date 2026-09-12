@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -47,5 +49,26 @@ func TestOutputFormatRejectsUnknownValue(t *testing.T) {
 	var format outputFormat
 	if err := format.Set("yaml"); err == nil {
 		t.Fatal("Set() error = nil")
+	}
+}
+
+func TestJSONOutputPreservesInvalidUTF8AsTaggedBase64(t *testing.T) {
+	t.Parallel()
+
+	value := []byte{0xff, 0x00, 0xfe}
+	var output bytes.Buffer
+	if err := writeResult(&output, outputJSON, map[string]any{"value": value}); err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(output.Bytes(), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	encoded, ok := decoded["value"].(map[string]any)
+	if !ok {
+		t.Fatalf("JSON value = %#v, want tagged binary object", decoded["value"])
+	}
+	if encoded["encoding"] != "base64" || encoded["data"] != base64.StdEncoding.EncodeToString(value) {
+		t.Fatalf("JSON value = %#v", encoded)
 	}
 }

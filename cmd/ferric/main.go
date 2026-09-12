@@ -16,11 +16,11 @@ var (
 )
 
 func main() {
-	info := buildinfo.Info{
+	info := buildinfo.ResolveRuntime(buildinfo.Info{
 		Version: version,
 		Commit:  commit,
 		Date:    date,
-	}
+	})
 
 	if err := cli.Execute(info); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)

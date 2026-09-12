@@ -380,7 +380,7 @@ func completeScheduleKind(_ *cobra.Command, _ []string, _ string) ([]string, cob
 }
 
 func completeScheduleState(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-	return []string{"active", "paused", "completed", "failed", "deleted"}, cobra.ShellCompDirectiveNoFileComp
+	return []string{"active", "paused", "running", "completed", "failed", "cancelled", "all"}, cobra.ShellCompDirectiveNoFileComp
 }
 
 type schedulePauser interface {
@@ -494,6 +494,9 @@ func newScheduleFireDueCommand(dependencies dependencies) *cobra.Command {
 			}
 			if limit <= 0 {
 				return errors.New("limit must be greater than zero")
+			}
+			if err := validateBlockingWait(dependencies, wait, "--wait"); err != nil {
+				return err
 			}
 			options := ferricstore.ScheduleFireDueOptions{
 				Worker:  worker,

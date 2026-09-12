@@ -7,6 +7,7 @@ import (
 	"github.com/ferricstore/command-line/internal/connection"
 	"github.com/ferricstore/command-line/internal/credential"
 	"github.com/ferricstore/command-line/internal/ferric"
+	"github.com/ferricstore/command-line/internal/platformapi"
 	"github.com/ferricstore/command-line/internal/profile"
 )
 
@@ -89,11 +90,19 @@ func defaultDependencies() dependencies {
 // applied. This keeps the profile and credential stores used by commands,
 // authentication, and connections on one coherent dependency graph.
 func (d *dependencies) finalize() {
+	platformClient := platformapi.NewClient(nil)
+	enterpriseValidator := ferric.EnterpriseTokenValidator{Broker: platformClient}
+
 	if d.login == nil {
 		d.login = auth.NewService(
 			d.profiles,
 			d.credentials,
 			auth.NewPasswordProvider(ferric.PasswordValidator{}),
+			auth.NewEnterpriseTokenProvider(profile.AuthMethodEnterpriseSSO, enterpriseValidator),
+			auth.NewEnterpriseTokenProvider(
+				profile.AuthMethodEnterpriseAPIToken,
+				enterpriseValidator,
+			),
 		)
 	}
 	if d.connections == nil {
@@ -101,6 +110,16 @@ func (d *dependencies) finalize() {
 			d.profiles,
 			d.credentials,
 			connection.NewPasswordProvider(ferric.PasswordClientFactory{}),
+			connection.NewEnterpriseTokenProvider(
+				profile.AuthMethodEnterpriseSSO,
+				platformClient,
+				ferric.PasswordClientFactory{},
+			),
+			connection.NewEnterpriseTokenProvider(
+				profile.AuthMethodEnterpriseAPIToken,
+				platformClient,
+				ferric.PasswordClientFactory{},
+			),
 		)
 	}
 }

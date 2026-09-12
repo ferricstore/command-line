@@ -448,5 +448,14 @@ func formatFlowQueryError(err error) error {
 	if queryErr.Hint != "" {
 		parts = append(parts, "hint: "+queryErr.Hint)
 	}
-	return fmt.Errorf("%s: %w", strings.Join(parts, "; "), err)
+	return flowQueryDiagnostic{message: strings.Join(parts, "; "), cause: err}
 }
+
+type flowQueryDiagnostic struct {
+	message string
+	cause   error
+}
+
+func (e flowQueryDiagnostic) Error() string { return e.message }
+
+func (e flowQueryDiagnostic) Unwrap() error { return e.cause }

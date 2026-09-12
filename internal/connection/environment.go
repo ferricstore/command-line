@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ferricstore/command-line/internal/endpoint"
 	"github.com/ferricstore/command-line/internal/profile"
 )
 
@@ -138,6 +139,10 @@ func (s *EnvironmentCredentialSource) resolvePassword(
 	values map[string]string,
 ) (EphemeralCredentials, error) {
 	rawURL, err := requiredEnvironmentValue(values, envURL)
+	if err != nil {
+		return EphemeralCredentials{}, err
+	}
+	rawURL, err = endpoint.Validate(rawURL, envURL)
 	if err != nil {
 		return EphemeralCredentials{}, err
 	}
@@ -284,9 +289,24 @@ func readBoundedSecretFile(ctx context.Context, path string) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("secret source must be a regular file")
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
+	}
+	openedInfo, statErr := file.Stat()
+	if statErr != nil || !openedInfo.Mode().IsRegular() {
+		closeErr := file.Close()
+		if statErr != nil {
+			return nil, errors.Join(statErr, closeErr)
+		}
+		return nil, errors.Join(errors.New("secret source must be a regular file"), closeErr)
 	}
 	contents, readErr := io.ReadAll(io.LimitReader(file, maxEnvironmentSecretBytes+1))
 	closeErr := file.Close()

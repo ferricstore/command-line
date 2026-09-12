@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,12 +29,13 @@ func TestEnvironmentCredentialSourceIsInactiveWithoutConnectionVariables(t *test
 
 func TestEnvironmentCredentialSourceResolvesOSSPassword(t *testing.T) {
 	t.Parallel()
+	caCertFile := filepath.Join(t.TempDir(), "ferric-ca.pem")
 
 	source := newEnvironmentCredentialSource(mapEnvironment(map[string]string{
 		"FERRIC_URL":          " https://store.example.com/proxy ",
 		"FERRIC_USERNAME":     " operator ",
 		"FERRIC_PASSWORD":     " secret with spaces ",
-		"FERRIC_CA_CERT_FILE": " /run/config/ferric-ca.pem ",
+		"FERRIC_CA_CERT_FILE": " " + caCertFile + " ",
 	}), mapSecretFiles(nil, nil))
 	if !source.Configured() {
 		t.Fatal("Configured() = false with password environment variables")
@@ -48,7 +50,7 @@ func TestEnvironmentCredentialSourceResolvesOSSPassword(t *testing.T) {
 	}
 	wantProfile := profile.Profile{
 		URL:        "https://store.example.com/proxy",
-		CACertFile: "/run/config/ferric-ca.pem",
+		CACertFile: caCertFile,
 		Authentication: profile.Authentication{
 			Method:   profile.AuthMethodPassword,
 			Username: "operator",
@@ -56,6 +58,27 @@ func TestEnvironmentCredentialSourceResolvesOSSPassword(t *testing.T) {
 	}
 	if credentials.Profile != wantProfile || credentials.Secret != " secret with spaces " {
 		t.Fatalf("Resolve() = %#v", credentials)
+	}
+}
+
+func TestEnvironmentCredentialSourceRejectsCredentialsInOSSURL(t *testing.T) {
+	t.Parallel()
+
+	source := newEnvironmentCredentialSource(mapEnvironment(map[string]string{
+		"FERRIC_URL":      "ferric://embedded:secret@store.example.com:6388",
+		"FERRIC_USERNAME": "operator",
+		"FERRIC_PASSWORD": "environment-secret",
+	}), mapSecretFiles(nil, nil))
+
+	credentials, present, err := source.Resolve(context.Background())
+	if !present {
+		t.Fatal("Resolve() did not report the invalid environment source as present")
+	}
+	if err == nil || !strings.Contains(err.Error(), "must not contain credentials") {
+		t.Fatalf("Resolve() error = %v, want credential-bearing URL rejection", err)
+	}
+	if credentials != (EphemeralCredentials{}) {
+		t.Fatalf("Resolve() returned credentials for an unsafe URL: %#v", credentials)
 	}
 }
 

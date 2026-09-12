@@ -4,11 +4,12 @@ import ferricstore "github.com/ferricstore/ferricstore-go"
 
 // ScheduleFireDue converts a scheduler batch result without its Raw snapshot.
 func ScheduleFireDue(value ferricstore.ScheduleFireDueResult) any {
-	output := map[string]any{}
-	putInt64(output, "claimed", value.Claimed)
-	putInt64(output, "fired", value.Fired)
-	putInt64(output, "skipped", value.Skipped)
-	putInt64(output, "coalesced", value.Coalesced)
+	output := map[string]any{
+		"claimed":   value.Claimed,
+		"fired":     value.Fired,
+		"skipped":   value.Skipped,
+		"coalesced": value.Coalesced,
+	}
 	if value.Errors != nil {
 		errors := make([]any, len(value.Errors))
 		for index := range value.Errors {

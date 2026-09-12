@@ -12,10 +12,14 @@ import (
 	"testing"
 )
 
-func TestHTTPAndTLSDependenciesStayBehindFerricBoundary(t *testing.T) {
+func TestHTTPAndTLSDependenciesStayBehindTransportBoundaries(t *testing.T) {
 	t.Parallel()
 
 	internalRoot := internalDirectory(t)
+	transportPackages := map[string]struct{}{
+		filepath.Join(internalRoot, "ferric"):      {},
+		filepath.Join(internalRoot, "platformapi"): {},
+	}
 	forbidden := map[string]struct{}{
 		"crypto/tls":  {},
 		"crypto/x509": {},
@@ -26,7 +30,7 @@ func TestHTTPAndTLSDependenciesStayBehindFerricBoundary(t *testing.T) {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if path == filepath.Join(internalRoot, "ferric") {
+			if _, allowed := transportPackages[path]; allowed {
 				return filepath.SkipDir
 			}
 			return nil
@@ -44,7 +48,7 @@ func TestHTTPAndTLSDependenciesStayBehindFerricBoundary(t *testing.T) {
 				return err
 			}
 			if _, blocked := forbidden[name]; blocked {
-				t.Errorf("%s imports %s; HTTP/TLS construction belongs in internal/ferric", path, name)
+				t.Errorf("%s imports %s; HTTP/TLS construction belongs in a transport adapter", path, name)
 			}
 		}
 		return nil

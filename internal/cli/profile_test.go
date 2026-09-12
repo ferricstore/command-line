@@ -147,6 +147,51 @@ type failingDeleteManager struct {
 	err error
 }
 
+type cancelingDeleteManager struct {
+	profile.Manager
+	cancel func()
+	err    error
+}
+
+func (m *cancelingDeleteManager) Delete(context.Context, string) error {
+	m.cancel()
+	return m.err
+}
+
+type contextAwareCredentialStore struct {
+	values map[string]string
+}
+
+func (s *contextAwareCredentialStore) Put(ctx context.Context, name, secret string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.values[name] = secret
+	return nil
+}
+
+func (s *contextAwareCredentialStore) Get(ctx context.Context, name string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	value, ok := s.values[name]
+	if !ok {
+		return "", credential.ErrNotFound
+	}
+	return value, nil
+}
+
+func (s *contextAwareCredentialStore) Delete(ctx context.Context, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, ok := s.values[name]; !ok {
+		return credential.ErrNotFound
+	}
+	delete(s.values, name)
+	return nil
+}
+
 func (m *failingDeleteManager) Delete(context.Context, string) error {
 	return m.err
 }
@@ -167,6 +212,25 @@ func TestProfileDeleteRestoresCredentialWhenMetadataDeletionFails(t *testing.T) 
 	}
 	if credentials.values["production"] != "secret" {
 		t.Fatal("failed profile deletion did not restore the credential")
+	}
+}
+
+func TestProfileDeleteRestoresCredentialAfterRequestCancellation(t *testing.T) {
+	manager := profile.NewFileStore(filepath.Join(t.TempDir(), "config.json"))
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := manager.Put(ctx, profile.Profile{Name: "production"}); err != nil {
+		t.Fatal(err)
+	}
+	want := errors.New("profile write failed")
+	failingManager := &cancelingDeleteManager{Manager: manager, cancel: cancel, err: want}
+	credentials := &contextAwareCredentialStore{values: map[string]string{"production": "secret"}}
+
+	err := deleteProfile(ctx, dependencies{profiles: failingManager, credentials: credentials}, "production")
+	if !errors.Is(err, want) {
+		t.Fatalf("deleteProfile() error = %v, want metadata error", err)
+	}
+	if got := credentials.values["production"]; got != "secret" {
+		t.Fatalf("credential after rollback = %q, want restored secret", got)
 	}
 }
 

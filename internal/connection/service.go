@@ -65,7 +65,7 @@ func (s *Service) Open(ctx context.Context, profileName string) (Client, profile
 			profileName,
 		)
 	}
-	secret, err := s.credentials.Get(ctx, profileName)
+	secret, err := s.credentials.Get(ctx, storedProfile.CredentialReference())
 	if err != nil {
 		return nil, profile.Profile{}, fmt.Errorf("load credential for profile %q: %w", profileName, err)
 	}

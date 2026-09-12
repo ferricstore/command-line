@@ -37,7 +37,7 @@ func newServerCommand(dependencies dependencies) *cobra.Command {
 		newSDKCommand(dependencies, sdkCommandSpec{
 			name: "capabilities", use: "capabilities", short: "List commands supported by the server",
 			example: "  ferric server capabilities",
-			wire:    []any{"COMMAND"}, minArgs: 0, maxArgs: 0,
+			wire:    []any{"FERRICSTORE.CAPABILITIES"}, minArgs: 0, maxArgs: 0,
 		}),
 		newSDKCommand(dependencies, sdkCommandSpec{
 			name: "metrics", use: "metrics", short: "Show FerricStore metrics",
@@ -144,13 +144,13 @@ func newServerPersistenceCommand(dependencies dependencies) *cobra.Command {
 	command := &cobra.Command{
 		Use:     "persistence",
 		Short:   "Inspect or request persistence checkpoints",
-		Example: "  ferric server persistence last-save\n  ferric server persistence save",
+		Example: "  ferric server persistence last-save\n  ferric server persistence save --yes",
 		Args:    cobra.NoArgs,
 		RunE:    func(command *cobra.Command, _ []string) error { return command.Help() },
 	}
 	for _, spec := range []sdkCommandSpec{
-		{name: "save", use: "save", short: "Request a synchronous persistence checkpoint", example: "  ferric server persistence save", wire: []any{"SAVE"}, minArgs: 0, maxArgs: 0},
-		{name: "background-save", aliases: []string{"bgsave"}, use: "background-save", short: "Request a background persistence checkpoint", example: "  ferric server persistence background-save", wire: []any{"BGSAVE"}, minArgs: 0, maxArgs: 0},
+		{name: "save", use: "save", short: "Request a synchronous persistence checkpoint", long: "Request a synchronous persistence checkpoint. This command requires --yes.", example: "  ferric server persistence save --yes", wire: []any{"SAVE"}, minArgs: 0, maxArgs: 0},
+		{name: "background-save", aliases: []string{"bgsave"}, use: "background-save", short: "Request a background persistence checkpoint", long: "Request a background persistence checkpoint. This command requires --yes.", example: "  ferric server persistence background-save --yes", wire: []any{"BGSAVE"}, minArgs: 0, maxArgs: 0},
 		{name: "last-save", use: "last-save", short: "Show the last persistence timestamp", example: "  ferric server persistence last-save", wire: []any{"LASTSAVE"}, minArgs: 0, maxArgs: 0},
 	} {
 		command.AddCommand(newSDKCommand(dependencies, spec))

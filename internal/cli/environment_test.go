@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -78,10 +79,11 @@ func TestNetworkCommandPrefersEnvironmentCredentialsOverSelectedProfile(t *testi
 }
 
 func TestDefaultEnvironmentCredentialSourceReadsProcessEnvironment(t *testing.T) {
+	caCertFile := filepath.Join(t.TempDir(), "ferric-ca.pem")
 	t.Setenv("FERRIC_URL", "https://environment.example.com/proxy")
 	t.Setenv("FERRIC_USERNAME", "operator")
 	t.Setenv("FERRIC_PASSWORD", "environment-secret")
-	t.Setenv("FERRIC_CA_CERT_FILE", "/run/config/ferric-ca.pem")
+	t.Setenv("FERRIC_CA_CERT_FILE", caCertFile)
 	t.Setenv("FERRIC_PROFILE", "missing-saved-profile")
 
 	provider := &cliConnectionProvider{
@@ -98,7 +100,7 @@ func TestDefaultEnvironmentCredentialSourceReadsProcessEnvironment(t *testing.T)
 		t.Fatal(err)
 	}
 	if provider.profile.URL != "https://environment.example.com/proxy" ||
-		provider.profile.CACertFile != "/run/config/ferric-ca.pem" ||
+		provider.profile.CACertFile != caCertFile ||
 		provider.profile.Authentication.Username != "operator" ||
 		provider.secret != "environment-secret" {
 		t.Fatalf("provider received %#v/%q", provider.profile, provider.secret)
@@ -228,6 +230,39 @@ func TestAuthStatusReportsEnvironmentSourceWithoutSecret(t *testing.T) {
 	}
 	if !client.closed {
 		t.Fatal("status did not close the environment connection")
+	}
+}
+
+func TestAuthStatusRedactsCredentialsFromUnsafeProviderEndpoint(t *testing.T) {
+	t.Parallel()
+
+	credentials := environmentPasswordCredentials()
+	credentials.Profile.URL = "ferrics://embedded:leaked-secret@environment.example.com:6388?token=also-secret"
+	source := &staticCredentialSource{credentials: credentials, present: true}
+	provider := &cliConnectionProvider{
+		method: profile.AuthMethodPassword,
+		client: &cliConnectionClient{response: "PONG"},
+	}
+	command := New(
+		buildinfo.Info{},
+		WithConnectionService(connection.NewService(nil, nil, provider)),
+		WithEnvironmentCredentialSource(source),
+	)
+	var output bytes.Buffer
+	command.SetOut(&output)
+	command.SetErr(&output)
+	command.SetArgs([]string{"auth", "status"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"embedded", "leaked-secret", "also-secret", "token="} {
+		if strings.Contains(output.String(), forbidden) {
+			t.Fatalf("status exposed endpoint credential %q: %q", forbidden, output.String())
+		}
+	}
+	if !strings.Contains(output.String(), "ferrics://environment.example.com:6388") {
+		t.Fatalf("status omitted sanitized endpoint: %q", output.String())
 	}
 }
 

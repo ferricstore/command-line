@@ -8,12 +8,12 @@ transactional persistence.
 | Method | Deployment | Credential presented to the provider |
 |---|---|---|
 | password | OSS | ACL username and password |
-| enterprise-sso | Enterprise human | Renewable SSO session |
+| enterprise-sso | Enterprise human | Time-limited Platform `fsp_user_` token |
 | enterprise-api-token | Enterprise machine | Service-account API token |
 
-Password login is implemented in this repository. Enterprise methods are
-represented by provider contracts but do not invent or depend on an unfinished
-Enterprise HTTP API.
+All three methods are implemented. Enterprise methods call the versioned
+Platform credential broker and then authenticate a real native SDK connection
+with the returned short-lived credential.
 
 ## OSS Login
 
@@ -98,10 +98,11 @@ Relative `--ca-cert` paths are converted to absolute paths before profile
 validation and persistence. `FERRIC_CA_CERT_FILE` must be absolute because
 environment credentials are resolved independently for each invocation.
 
-Enterprise connection providers use the same boundary. They may exchange a
-stored renewable SSO credential or API token for a temporary cluster
-credential before returning the SDK client. The command itself does not need
-to know which authentication method produced the connection.
+Enterprise connection providers use the same boundary. They exchange a stored
+time-limited user token or service-account token for a temporary cluster
+credential before returning the SDK client. The Platform token is never sent
+to the FerricStore endpoint. Each one-shot command performs a new exchange, so
+native credentials are not persisted locally.
 
 Long-lived commands such as a future interactive shell or watch operation may
 keep one SDK client for their process lifetime, reconnecting and refreshing
@@ -114,18 +115,25 @@ Enterprise providers implement the same login provider interface and return:
 
 - validated profile metadata
 - authenticated principal
-- renewable credential to store in the keyring
+- Platform user or service-account token to store in the keyring
 
-Mock SSO and API-token providers verify this contract in the public repository.
-The Enterprise repository owns black-box tests for browser/device login, token
-exchange, expiry, refresh, revocation, and real cluster authentication.
+Login requires `--control-url`, `--cluster`, and `--token-stdin`; organization
+slug or ID is optional but is checked when supplied. The control URL must use
+HTTPS except for an explicit loopback development endpoint. Redirects,
+credential-bearing URLs, oversized responses, invalid native endpoints, and
+expired credential responses fail closed.
+
+The command-line repository unit-tests routing, secret persistence, exchange
+validation, and token non-disclosure. Platform owns the Docker-backed end-to-end
+test against the packaged Enterprise server, including authentication and
+expiry on an already-open native connection.
 
 No public test should require Enterprise source code, credentials, or a live
 Enterprise control plane.
 
 ## Test Ownership
 
-| Behavior | command-line repository | Enterprise repository |
+| Behavior | command-line repository | Platform / Enterprise integration |
 |---|---|---|
 | OSS native username/password | Real protected OSS server | Optional |
 | OSS HTTPS username/password and custom CA | Real TLS HTTP listener | Optional |
@@ -135,14 +143,18 @@ Enterprise control plane.
 | Profile selection, deletion, and completion | Unit tests | Optional |
 | Auth status and local logout | Real OSS connection and unit tests | Optional |
 | Provider routing and persistence | Unit tests with mocks | Optional |
-| SSO/device authorization | Mock only | Real integration |
-| API-token exchange | Mock only | Real integration |
-| Temporary cluster-token refresh | Mock only | Real integration |
+| Human token exchange | HTTP contract and provider unit tests | Packaged Enterprise integration through Platform |
+| Service-account token exchange | HTTP contract and provider unit tests | Platform broker/RBAC integration |
+| Temporary native credential expiry | Unit contract | Packaged Enterprise integration through Platform |
 | Environment OSS credentials and secret files | Real protected OSS server | Optional |
-| Environment API-token routing | Mock only | Real integration |
+| Environment API-token routing | Provider and environment tests | Platform broker/RBAC integration |
 
-The native integration exercises username/password over `ferric://`. The HTTP
+The native OSS integration exercises username/password over `ferric://`. The HTTP
 integration separately exercises username/password over a real `https://`
 listener, a private CA, saved-profile reuse after a working-directory change,
 HTTP/2 negotiation, invalid credentials, and a user whose ACL permits `PING`
 but denies `SET`.
+
+Cloud integration deliberately runs the Enterprise package; standalone OSS is
+not a Platform cloud target. The CLI does not impose TLS policy on direct native
+OSS connections; deployments choose between `ferric://` and `ferrics://`.

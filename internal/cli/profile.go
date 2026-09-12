@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/ferricstore/command-line/internal/credential"
+	"github.com/ferricstore/command-line/internal/endpoint"
 	"github.com/ferricstore/command-line/internal/profile"
 	"github.com/spf13/cobra"
 )
+
+const profileCredentialRollbackTimeout = 5 * time.Second
 
 func newProfileCommand(dependencies dependencies) *cobra.Command {
 	command := &cobra.Command{
@@ -180,17 +184,29 @@ func deleteProfile(ctx context.Context, dependencies dependencies, name string) 
 	if name == "" {
 		return errors.New("profile name is required")
 	}
-	if _, err := dependencies.profiles.Get(ctx, name); err != nil {
+	operation := func(mutationContext context.Context) error {
+		return deleteProfileState(mutationContext, dependencies, name)
+	}
+	if coordinator, ok := dependencies.profiles.(profile.CredentialMutationCoordinator); ok {
+		return coordinator.WithCredentialMutation(ctx, operation)
+	}
+	return operation(ctx)
+}
+
+func deleteProfileState(ctx context.Context, dependencies dependencies, name string) error {
+	storedProfile, err := dependencies.profiles.Get(ctx, name)
+	if err != nil {
 		return fmt.Errorf("load profile %q: %w", name, err)
 	}
+	credentialReference := storedProfile.CredentialReference()
 
-	secret, credentialErr := dependencies.credentials.Get(ctx, name)
+	secret, credentialErr := dependencies.credentials.Get(ctx, credentialReference)
 	hadCredential := credentialErr == nil
 	if credentialErr != nil && !errors.Is(credentialErr, credential.ErrNotFound) {
 		return fmt.Errorf("load credential for profile %q: %w", name, credentialErr)
 	}
 	if hadCredential {
-		if err := dependencies.credentials.Delete(ctx, name); err != nil {
+		if err := dependencies.credentials.Delete(ctx, credentialReference); err != nil {
 			if !errors.Is(err, credential.ErrNotFound) {
 				return fmt.Errorf("delete credential for profile %q: %w", name, err)
 			}
@@ -200,7 +216,9 @@ func deleteProfile(ctx context.Context, dependencies dependencies, name string) 
 	if err := dependencies.profiles.Delete(ctx, name); err != nil {
 		profileErr := fmt.Errorf("delete profile %q: %w", name, err)
 		if hadCredential {
-			rollbackErr := dependencies.credentials.Put(ctx, name, secret)
+			cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), profileCredentialRollbackTimeout)
+			defer cancel()
+			rollbackErr := dependencies.credentials.Put(cleanupContext, credentialReference, secret)
 			if rollbackErr != nil {
 				return errors.Join(profileErr, fmt.Errorf("restore credential: %w", rollbackErr))
 			}
@@ -212,9 +230,9 @@ func deleteProfile(ctx context.Context, dependencies dependencies, name string) 
 
 func profileEndpoint(storedProfile profile.Profile) string {
 	if storedProfile.URL != "" {
-		return storedProfile.URL
+		return endpoint.Display(storedProfile.URL)
 	}
-	return storedProfile.ControlURL
+	return endpoint.Display(storedProfile.ControlURL)
 }
 
 func mustRegisterProfileFlagCompletion(command *cobra.Command, dependencies dependencies) {

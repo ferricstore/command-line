@@ -35,8 +35,9 @@ const (
 
 // Authentication contains non-secret authentication metadata.
 type Authentication struct {
-	Method   AuthMethod `json:"method"`
-	Username string     `json:"username,omitempty"`
+	Method        AuthMethod `json:"method"`
+	Username      string     `json:"username,omitempty"`
+	CredentialRef string     `json:"credential_ref,omitempty"`
 }
 
 // Profile describes a named FerricStore connection.
@@ -50,10 +51,26 @@ type Profile struct {
 	Authentication Authentication `json:"auth"`
 }
 
+// CredentialReference returns the opaque keyring account referenced by a
+// profile. Profiles written before credential generations were introduced
+// continue to use their profile name.
+func (p Profile) CredentialReference() string {
+	if reference := strings.TrimSpace(p.Authentication.CredentialRef); reference != "" {
+		return reference
+	}
+	return p.Name
+}
+
 // Store persists named profiles.
 type Store interface {
 	Put(context.Context, Profile) error
 	Get(context.Context, string) (Profile, error)
+}
+
+// CredentialMutationCoordinator serializes profile and credential mutations
+// that must be observed as one logical operation across CLI processes.
+type CredentialMutationCoordinator interface {
+	WithCredentialMutation(context.Context, func(context.Context) error) error
 }
 
 // Manager provides profile discovery and current-profile selection.
@@ -256,7 +273,22 @@ func (s *FileStore) Delete(ctx context.Context, name string) error {
 	})
 }
 
+// WithCredentialMutation holds a process-shared lock while an authentication
+// operation updates both the system credential store and profile metadata.
+func (s *FileStore) WithCredentialMutation(ctx context.Context, operation func(context.Context) error) error {
+	if operation == nil {
+		return errors.New("credential mutation is required")
+	}
+	return s.withFileLock(ctx, s.path+".credentials.lock", func() error {
+		return operation(ctx)
+	})
+}
+
 func (s *FileStore) withMutationLock(ctx context.Context, operation func() error) (err error) {
+	return s.withFileLock(ctx, s.path+".lock", operation)
+}
+
+func (s *FileStore) withFileLock(ctx context.Context, path string, operation func() error) (err error) {
 	if s.pathErr != nil {
 		return s.pathErr
 	}
@@ -266,7 +298,7 @@ func (s *FileStore) withMutationLock(ctx context.Context, operation func() error
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return fmt.Errorf("create profile directory: %w", err)
 	}
-	fileLock := flock.New(s.path+".lock", flock.SetPermissions(0o600))
+	fileLock := flock.New(path, flock.SetPermissions(0o600))
 	locked, err := fileLock.TryLockContext(ctx, lockRetryDelay)
 	if err != nil {
 		return fmt.Errorf("lock profiles: %w", err)

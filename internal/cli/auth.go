@@ -167,16 +167,21 @@ func newLogoutCommand(dependencies dependencies) *cobra.Command {
 func newLoginCommand(dependencies dependencies) *cobra.Command {
 	var (
 		rawURL        string
+		methodName    string
 		caCertFile    string
+		controlURL    string
+		organization  string
+		cluster       string
 		username      string
 		passwordStdin bool
+		tokenStdin    bool
 		noStore       bool
 	)
 
 	command := &cobra.Command{
 		Use:   "login",
-		Short: "Validate and store OSS username/password credentials",
-		Long:  "Authenticate with an OSS ACL username and password. The password is stored in the operating-system keystore unless --no-store is used.",
+		Short: "Validate and store OSS or Platform credentials",
+		Long:  "Authenticate directly with an OSS ACL password or exchange a Platform human/service token for a temporary Enterprise credential. The source secret is stored in the operating-system keystore unless --no-store is used.",
 		Example: "  ferric auth login --url ferric://127.0.0.1:6388 --username default\n" +
 			"  printf '%s\\n' \"$FERRIC_PASSWORD\" | ferric auth login --url https://store.example.com --username operator --ca-cert /etc/ferric/ca.pem --password-stdin",
 		Args: cobra.NoArgs,
@@ -193,7 +198,17 @@ func newLoginCommand(dependencies dependencies) *cobra.Command {
 				return err
 			}
 
-			password, err := loginPassword(command, dependencies.passwordReader, passwordStdin)
+			method, err := parseLoginMethod(methodName)
+			if err != nil {
+				return err
+			}
+			secret, err := loginSecret(
+				command,
+				dependencies.passwordReader,
+				method,
+				passwordStdin,
+				tokenStdin,
+			)
 			if err != nil {
 				return err
 			}
@@ -201,13 +216,16 @@ func newLoginCommand(dependencies dependencies) *cobra.Command {
 			defer cancel()
 
 			result, err := dependencies.login.Login(ctx, auth.LoginRequest{
-				ProfileName: profileName,
-				Method:      profile.AuthMethodPassword,
-				URL:         rawURL,
-				CACertFile:  caCertFile,
-				Username:    username,
-				Secret:      password,
-				Store:       !noStore,
+				ProfileName:  profileName,
+				Method:       method,
+				URL:          rawURL,
+				CACertFile:   caCertFile,
+				ControlURL:   controlURL,
+				Organization: organization,
+				Cluster:      cluster,
+				Username:     username,
+				Secret:       secret,
+				Store:        !noStore,
 			})
 			if err != nil {
 				return err
@@ -219,7 +237,13 @@ func newLoginCommand(dependencies dependencies) *cobra.Command {
 					result.Principal,
 					result.Profile.Name,
 				)
-				return err
+				if err != nil {
+					return err
+				}
+				if result.Warning != nil {
+					_, _ = fmt.Fprintf(command.ErrOrStderr(), "warning: %v\n", result.Warning)
+				}
+				return nil
 			}
 			_, err = fmt.Fprintf(
 				command.OutOrStdout(),
@@ -230,12 +254,49 @@ func newLoginCommand(dependencies dependencies) *cobra.Command {
 		},
 	}
 
+	command.Flags().StringVar(&methodName, "method", string(profile.AuthMethodPassword), "authentication method: password, enterprise-sso, or enterprise-api-token")
 	command.Flags().StringVar(&rawURL, "url", ferric.DefaultURL, "FerricStore ferric://, ferrics://, or https:// URL")
 	command.Flags().StringVar(&caCertFile, "ca-cert", "", "PEM CA certificate for ferrics:// or https:// TLS verification")
+	command.Flags().StringVar(&controlURL, "control-url", "", "Platform HTTPS control-plane URL")
+	command.Flags().StringVar(&organization, "organization", "", "Platform organization slug or ID")
+	command.Flags().StringVar(&cluster, "cluster", "", "Platform cluster ID")
 	command.Flags().StringVar(&username, "username", "default", "OSS ACL username")
 	command.Flags().BoolVar(&passwordStdin, "password-stdin", false, "read the password from standard input")
+	command.Flags().BoolVar(&tokenStdin, "token-stdin", false, "read the Platform user or service token from standard input")
 	command.Flags().BoolVar(&noStore, "no-store", false, "validate credentials without storing the profile or password")
 	return command
+}
+
+func parseLoginMethod(value string) (profile.AuthMethod, error) {
+	method := profile.AuthMethod(strings.TrimSpace(value))
+	switch method {
+	case profile.AuthMethodPassword, profile.AuthMethodEnterpriseSSO, profile.AuthMethodEnterpriseAPIToken:
+		return method, nil
+	default:
+		return "", fmt.Errorf("unsupported authentication method %q", value)
+	}
+}
+
+func loginSecret(
+	command *cobra.Command,
+	reader passwordReader,
+	method profile.AuthMethod,
+	passwordStdin bool,
+	tokenStdin bool,
+) (string, error) {
+	if method == profile.AuthMethodPassword {
+		if tokenStdin {
+			return "", errors.New("--token-stdin requires an Enterprise authentication method")
+		}
+		return loginPassword(command, reader, passwordStdin)
+	}
+	if passwordStdin {
+		return "", errors.New("--password-stdin is only valid with --method password")
+	}
+	if !tokenStdin {
+		return "", errors.New("enterprise authentication requires --token-stdin")
+	}
+	return readPassword(command.InOrStdin())
 }
 
 func loginPassword(command *cobra.Command, reader passwordReader, fromStdin bool) (string, error) {

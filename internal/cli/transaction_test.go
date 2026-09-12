@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -91,5 +92,39 @@ func TestTransactionDestructiveCommandRequiresConfirmationBeforeConnecting(t *te
 	}
 	if client.closed || client.command != nil {
 		t.Fatal("destructive transaction opened a connection without confirmation")
+	}
+}
+
+func TestTransactionResultRejectsWatchConflict(t *testing.T) {
+	t.Parallel()
+
+	result, err := checkedTransactionResult(nil, nil, true)
+	if err == nil || !strings.Contains(err.Error(), "watched key changed") {
+		t.Fatalf("checkedTransactionResult() = %#v, %v; want WATCH conflict", result, err)
+	}
+}
+
+func TestTransactionResultPreservesExecutionFailure(t *testing.T) {
+	t.Parallel()
+
+	want := errors.New("EXEC failed")
+	result, err := checkedTransactionResult(nil, want, true)
+	if result != nil || !errors.Is(err, want) {
+		t.Fatalf("checkedTransactionResult() = %#v, %v; want execution failure", result, err)
+	}
+}
+
+func TestTransactionRoutingFlagsPreserveCommasInKeys(t *testing.T) {
+	t.Parallel()
+
+	command := newStoreTransactionCommand(dependencies{runtime: &runtimeOptions{}})
+	for _, name := range []string{"key", "watch"} {
+		flag := command.Flags().Lookup(name)
+		if flag == nil {
+			t.Fatalf("--%s flag is missing", name)
+		}
+		if got := flag.Value.Type(); got != "stringArray" {
+			t.Fatalf("--%s type = %q, want stringArray so commas remain part of the key", name, got)
+		}
 	}
 }

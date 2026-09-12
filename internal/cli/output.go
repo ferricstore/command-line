@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type outputFormat string
@@ -174,7 +176,14 @@ func normalizeOutputValue(value reflect.Value) any {
 		return normalizeOutputValue(value.Elem())
 	}
 	if value.Type() == reflect.TypeOf([]byte(nil)) {
-		return string(value.Bytes())
+		contents := value.Bytes()
+		if utf8.Valid(contents) {
+			return string(contents)
+		}
+		return map[string]any{
+			"encoding": "base64",
+			"data":     base64.StdEncoding.EncodeToString(contents),
+		}
 	}
 	switch value.Kind() {
 	case reflect.Map:

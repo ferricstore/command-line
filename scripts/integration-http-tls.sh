@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-image="${FERRICSTORE_IMAGE:-quay.io/ferricstore/ferricstore:0.11.11@sha256:d9f488539f0d6c1a513d2315e7a9c2947cc795b393f3774c9de8ba5e5b5c21b5}"
+image="$(./scripts/resolve-ferricstore-image.sh)"
 suffix="$$-$RANDOM"
 container="ferric-command-line-http-$suffix"
 cli_image="ferric-command-line-http-integration:$suffix"

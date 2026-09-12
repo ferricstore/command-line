@@ -32,17 +32,28 @@ func newWorkflowCommand(dependencies dependencies) *cobra.Command {
 	}
 	command.AddCommand(
 		newWorkflowStartCommand(dependencies),
+		newFlowCreateManyCommand(dependencies, "workflow"),
+		newWorkflowStartAndClaimCommand(dependencies),
 		newFlowDescribeCommand(dependencies, "workflow"),
 		newFlowListCommand(dependencies, "workflow"),
 		newWorkflowQueryCommand(dependencies),
 		newWorkflowSearchCommand(dependencies),
 		newWorkflowClaimCommand(dependencies),
+		newWorkflowReclaimCommand(dependencies),
 		newWorkflowSignalCommand(dependencies),
 		newWorkflowTransitionCommand(dependencies),
+		newFlowTransitionManyCommand(dependencies),
+		newWorkflowStepContinueCommand(dependencies),
+		newWorkflowSpawnChildrenCommand(dependencies),
 		newFlowCompleteCommand(dependencies, "workflow"),
+		newFlowCompleteManyCommand(dependencies, "workflow"),
 		newFlowRetryCommand(dependencies, "workflow"),
+		newFlowRetryManyCommand(dependencies, "workflow"),
 		newFlowFailCommand(dependencies, "workflow"),
+		newFlowFailManyCommand(dependencies, "workflow"),
 		newFlowCancelCommand(dependencies, "workflow"),
+		newFlowCancelManyCommand(dependencies, "workflow"),
+		newWorkflowRunStepsManyCommand(dependencies),
 		newWorkflowRewindCommand(dependencies),
 		newFlowHistoryCommand(dependencies, "workflow"),
 		newWorkflowChildrenCommand(dependencies),
@@ -52,11 +63,16 @@ func newWorkflowCommand(dependencies dependencies) *cobra.Command {
 		newWorkflowFailuresCommand(dependencies),
 		newWorkflowStuckCommand(dependencies),
 		newWorkflowInfoCommand(dependencies),
+		newFlowExistsCommand(dependencies),
+		newFlowCountByStateCommand(dependencies),
+		newFlowAttributesCommand(dependencies),
+		newFlowAttributeValuesCommand(dependencies),
 		newWorkflowValuesCommand(dependencies),
 		newFlowStatsCommand(dependencies, "workflow"),
 		newFlowPolicyCommand(dependencies, "workflow"),
 		newScheduleCommand(dependencies),
 		newGovernanceCommand(dependencies),
+		newFlowRetentionCommand(dependencies),
 	)
 	return command
 }
@@ -115,6 +131,9 @@ func newWorkflowClaimCommand(dependencies dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := validateBlockingWait(dependencies, flags.block, "--wait"); err != nil {
+				return err
+			}
 			options.JobOnly = false
 			return runNetworkCommand(command, dependencies, "claim workflows", func(ctx context.Context, client connection.Client, _ profile.Profile) (any, error) {
 				claimer, err := requireClientCapability[flowClaimer](client, "FerricFlow claims")
@@ -126,7 +145,7 @@ func newWorkflowClaimCommand(dependencies dependencies) *cobra.Command {
 			})
 		},
 	}
-	flags.add(command)
+	flags.add(command, true)
 	return command
 }
 
@@ -674,7 +693,11 @@ func newWorkflowValuesCommand(dependencies dependencies) *cobra.Command {
 			return command.Help()
 		},
 	}
-	command.AddCommand(newWorkflowValuesGetCommand(dependencies))
+	command.AddCommand(
+		newWorkflowValuesGetCommand(dependencies),
+		newWorkflowNamedValuePutCommand(dependencies),
+		newWorkflowValueUploadCommand(dependencies),
+	)
 	return command
 }
 

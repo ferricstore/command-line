@@ -3,6 +3,8 @@ package cli
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -11,6 +13,213 @@ import (
 	"github.com/ferricstore/command-line/internal/buildinfo"
 	ferricstore "github.com/ferricstore/ferricstore-go"
 )
+
+type workflowReclaimClient struct {
+	options ferricstore.ReclaimOptions
+	calls   int
+}
+
+type workflowStartAndClaimClient struct {
+	options ferricstore.StartAndClaimOptions
+}
+
+func (*workflowStartAndClaimClient) Ping(context.Context, ...string) (string, error) {
+	return "PONG", nil
+}
+func (*workflowStartAndClaimClient) Close() error { return nil }
+func (client *workflowStartAndClaimClient) StartAndClaim(_ context.Context, options ferricstore.StartAndClaimOptions) (*ferricstore.FlowRecord, error) {
+	client.options = options
+	return &ferricstore.FlowRecord{ID: options.ID, Type: options.Type, State: "running", LeaseToken: "lease", FencingToken: 1}, nil
+}
+
+type workflowStepContinueClient struct {
+	options ferricstore.StepContinueOptions
+}
+
+type workflowSpawnChildrenClient struct {
+	options ferricstore.SpawnChildrenOptions
+}
+
+type workflowValuePutClient struct {
+	name    string
+	value   any
+	options ferricstore.ValuePutOptions
+	upload  bool
+}
+
+func (*workflowValuePutClient) Ping(context.Context, ...string) (string, error) { return "PONG", nil }
+func (*workflowValuePutClient) Close() error                                    { return nil }
+func (client *workflowValuePutClient) PutValue(_ context.Context, name string, value any, options ferricstore.ValuePutOptions) (any, error) {
+	client.name = name
+	client.value = value
+	client.options = options
+	return map[string]any{"reference": "value-ref-1"}, nil
+}
+func (client *workflowValuePutClient) ValuePut(_ context.Context, value any, options ferricstore.ValuePutOptions) (any, error) {
+	client.upload = true
+	client.value = value
+	client.options = options
+	return map[string]any{"reference": "value-ref-1"}, nil
+}
+
+func (*workflowSpawnChildrenClient) Ping(context.Context, ...string) (string, error) {
+	return "PONG", nil
+}
+func (*workflowSpawnChildrenClient) Close() error { return nil }
+func (client *workflowSpawnChildrenClient) SpawnChildren(_ context.Context, options ferricstore.SpawnChildrenOptions) (any, error) {
+	client.options = options
+	return map[string]any{"created": len(options.Children)}, nil
+}
+
+func (*workflowStepContinueClient) Ping(context.Context, ...string) (string, error) {
+	return "PONG", nil
+}
+func (*workflowStepContinueClient) Close() error { return nil }
+func (client *workflowStepContinueClient) StepContinue(_ context.Context, options ferricstore.StepContinueOptions) (*ferricstore.FlowRecord, error) {
+	client.options = options
+	return &ferricstore.FlowRecord{ID: options.ID, State: options.ToState, LeaseToken: options.LeaseToken, FencingToken: options.FencingToken}, nil
+}
+
+func (*workflowReclaimClient) Ping(context.Context, ...string) (string, error) { return "PONG", nil }
+func (*workflowReclaimClient) Close() error                                    { return nil }
+func (client *workflowReclaimClient) Reclaim(_ context.Context, options ferricstore.ReclaimOptions) ([]ferricstore.FlowRecord, error) {
+	client.calls++
+	client.options = options
+	return []ferricstore.FlowRecord{{ID: "order-42", Type: options.Type, State: "running"}}, nil
+}
+
+func TestWorkflowReclaimSupportsValueProjection(t *testing.T) {
+	t.Parallel()
+
+	client := &workflowReclaimClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{
+		"--profile", "production", "workflow", "reclaim", "order", "--worker", "worker-2",
+		"--value", "receipt", "--payload=false", "--attributes=false",
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if client.calls != 1 || !reflect.DeepEqual(client.options.Values, []string{"receipt"}) ||
+		client.options.Payload == nil || *client.options.Payload ||
+		client.options.IncludeAttributes == nil || *client.options.IncludeAttributes {
+		t.Fatalf("reclaim options = %#v", client.options)
+	}
+}
+
+func TestWorkflowStartAndClaimForwardsCreationAndLeaseFields(t *testing.T) {
+	t.Parallel()
+
+	client := &workflowStartAndClaimClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{
+		"--profile", "production", "workflow", "start-and-claim", "order", "order-42", `{"total":125}`,
+		"--json", "--worker", "worker-1", "--initial-state", "queued", "--lease", "45s",
+		"--partition", "tenant-a", "--attribute", "region=eu",
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if client.options.ID != "order-42" || client.options.Type != "order" || client.options.Worker != "worker-1" ||
+		client.options.InitialState != "queued" || client.options.LeaseMS != int64((45*time.Second)/time.Millisecond) ||
+		client.options.PartitionKey != "tenant-a" || !reflect.DeepEqual(client.options.Payload, map[string]any{"total": float64(125)}) ||
+		!reflect.DeepEqual(client.options.Attributes, map[string]any{"region": "eu"}) {
+		t.Fatalf("start-and-claim options = %#v", client.options)
+	}
+}
+
+func TestWorkflowStepContinueForwardsFenceAndRenewsLease(t *testing.T) {
+	t.Parallel()
+
+	client := &workflowStepContinueClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{
+		"--profile", "production", "workflow", "step-continue", "order-42", "charging", "shipping",
+		"--lease-token", "lease", "--fencing-token", "7", "--lease", "1m", "--worker", "worker-2",
+		"--attribute", "stage=shipping", "--value", "receipt=stored",
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if client.options.ID != "order-42" || client.options.FromState != "charging" || client.options.ToState != "shipping" ||
+		client.options.LeaseToken != "lease" || client.options.FencingToken != 7 ||
+		client.options.LeaseMS != int64(time.Minute/time.Millisecond) || client.options.Worker != "worker-2" ||
+		!reflect.DeepEqual(client.options.AttributesMerge, map[string]any{"stage": "shipping"}) ||
+		!reflect.DeepEqual(client.options.Values, map[string]any{"receipt": "stored"}) {
+		t.Fatalf("step-continue options = %#v", client.options)
+	}
+}
+
+func TestWorkflowSpawnChildrenReadsTypedBatchFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "children.json")
+	contents := `[
+		{"id":"child-1","type":"charge","payload":{"amount":125},"partition_key":"tenant-a","attributes":{"region":"eu"}},
+		{"id":"child-2","type":"notify","payload":{"channel":"email"}}
+	]`
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := &workflowSpawnChildrenClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{
+		"--profile", "production", "workflow", "spawn-children", "order-42", "--file", path,
+		"--lease-token", "lease", "--fencing-token", "7", "--group", "fulfillment", "--wait", "all",
+		"--success", "completed", "--failure", "failed", "--partition", "tenant-a",
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if client.options.ID != "order-42" || client.options.GroupID != "fulfillment" || client.options.Wait != "all" ||
+		client.options.LeaseToken != "lease" || client.options.FencingToken == nil || *client.options.FencingToken != 7 ||
+		len(client.options.Children) != 2 || client.options.Children[0].ID != "child-1" ||
+		!reflect.DeepEqual(client.options.Children[0].Payload, map[string]any{"amount": float64(125)}) {
+		t.Fatalf("spawn options = %#v", client.options)
+	}
+}
+
+func TestWorkflowNamedValuePutForwardsOwnership(t *testing.T) {
+	t.Parallel()
+
+	client := &workflowValuePutClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{
+		"--profile", "production", "workflow", "values", "put", "receipt", `{"status":"paid"}`,
+		"--json", "--owner", "order-42", "--partition", "tenant-a", "--override",
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if client.name != "receipt" || !reflect.DeepEqual(client.value, map[string]any{"status": "paid"}) ||
+		client.options.OwnerFlowID != "order-42" || client.options.PartitionKey != "tenant-a" ||
+		client.options.Override == nil || !*client.options.Override {
+		t.Fatalf("value put = %q %#v %#v", client.name, client.value, client.options)
+	}
+}
+
+func TestWorkflowValueUploadForwardsTTL(t *testing.T) {
+	t.Parallel()
+
+	client := &workflowValuePutClient{}
+	command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+	command.SetArgs([]string{
+		"--profile", "production", "workflow", "values", "upload", "binary-ish", "--ttl", "24h",
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !client.upload || client.value != "binary-ish" || client.options.TTLMS == nil ||
+		*client.options.TTLMS != int64((24*time.Hour)/time.Millisecond) {
+		t.Fatalf("value upload = %#v %#v", client.value, client.options)
+	}
+}
 
 type workflowTestClient struct {
 	createOptions     ferricstore.CreateOptions
