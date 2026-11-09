@@ -314,8 +314,8 @@ server generation.
 
 ## Development
 
-Go 1.26.7 or newer is supported. Older toolchains contain reachable standard
-library vulnerabilities. The repository pins Go 1.26.7 for development and
+Go 1.26.10 or newer is supported. Older toolchains contain reachable standard
+library vulnerabilities. The repository pins Go 1.26.10 for development and
 release builds through mise:
 
 ~~~sh

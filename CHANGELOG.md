@@ -80,3 +80,10 @@ Versioning.
   job only": it asked for full records but kept the job-only state option,
   which the Go SDK rejects before sending. Its tests used a fake claimer, so
   they never ran that check; a new test claims through a real SDK client.
+
+### Security
+
+- Build with Go 1.26.10 (from 1.26.7). Go 1.26.7's standard library has
+  reachable vulnerabilities GO-2026-6617 (`net/http`, fixed in 1.26.9) and
+  GO-2026-6809 (`crypto/x509`, fixed in 1.26.10), which govulncheck reports in
+  the HTTPS and Platform API paths.
