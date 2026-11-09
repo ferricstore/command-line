@@ -134,7 +134,10 @@ func newWorkflowClaimCommand(dependencies dependencies) *cobra.Command {
 			if err := validateBlockingWait(dependencies, flags.block, "--wait"); err != nil {
 				return err
 			}
+			// Full records already carry their state; IncludeState applies only
+			// to job-only claims, and the SDK rejects it on full-record claims.
 			options.JobOnly = false
+			options.IncludeState = false
 			return runNetworkCommand(command, dependencies, "claim workflows", func(ctx context.Context, client connection.Client, _ profile.Profile) (any, error) {
 				claimer, err := requireClientCapability[flowClaimer](client, "FerricFlow claims")
 				if err != nil {

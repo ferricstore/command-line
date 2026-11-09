@@ -73,3 +73,10 @@ Versioning.
 - Use FerricStore Go SDK v0.13.1 (from v0.11.11) and run the integration tests
   against FerricStore 0.12.19 (from 0.11.17). CLI release tags follow the
   pinned Go SDK version.
+
+### Fixed
+
+- `ferric workflow claim` failed on every call with "include state requires
+  job only": it asked for full records but kept the job-only state option,
+  which the Go SDK rejects before sending. Its tests used a fake claimer, so
+  they never ran that check; a new test claims through a real SDK client.
