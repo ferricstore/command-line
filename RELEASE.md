@@ -1,8 +1,10 @@
 # Release Process
 
 Releases are built by GitHub Actions from semantic-version tags. A CLI release
-tag matches the FerricStore OSS and Go SDK release it is based on. For example,
-CLI `v0.11.11` targets FerricStore OSS `v0.11.11` or newer and uses SDK `v0.11.11`.
+tag matches the FerricStore Go SDK release it pins. For example, CLI `v0.13.1`
+uses SDK `v0.13.1`. SDK and server versions no longer move together (SDK 0.13
+serves FerricStore 0.12), so the server the CLI is tested against is pinned
+separately, below.
 
 `FERRICSTORE_VERSION` is the CLI compatibility source of truth. The release
 workflow rejects a tag when that file, the pinned SDK module, and the Git tag
@@ -32,7 +34,7 @@ image to a different source revision.
        mise exec -- make integration-oss
        mise exec -- make integration-http
        golangci-lint run ./...
-       mise exec -- ./scripts/verify-release-version.sh v0.11.11
+       mise exec -- ./scripts/verify-release-version.sh v0.13.1
        goreleaser release --snapshot --clean
 
 5. Verify the generated archives in dist/.
@@ -42,8 +44,8 @@ image to a different source revision.
 Create and push an annotated semantic-version tag:
 
 ~~~sh
-git tag -a v0.11.11 -m "Ferric CLI v0.11.11 for FerricStore OSS v0.11.11"
-git push origin v0.11.11
+git tag -a v0.13.1 -m "Ferric CLI v0.13.1 for FerricStore Go SDK v0.13.1"
+git push origin v0.13.1
 ~~~
 
 The release workflow reruns tests and then publishes:
@@ -53,8 +55,8 @@ The release workflow reruns tests and then publishes:
 - Windows binaries for amd64 and arm64
 - source archive
 - SHA-256 checksum file
-- a distroless GHCR image for Linux amd64 and arm64, tagged `v0.11.11`,
-  `0.11.11`, and `latest`, with an SBOM, build provenance, and a GitHub artifact
+- a distroless GHCR image for Linux amd64 and arm64, tagged `v0.13.1`,
+  `0.13.1`, and `latest`, with an SBOM, build provenance, and a GitHub artifact
   attestation
 
 GitHub initially creates a new container package as private. After the first

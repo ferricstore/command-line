@@ -67,3 +67,9 @@ Versioning.
   provenance plus a GitHub artifact attestation.
 - Lockstep CLI release tags that are validated against the declared
   FerricStore OSS compatibility line and pinned Go SDK version.
+
+### Changed
+
+- Use FerricStore Go SDK v0.13.1 (from v0.11.11) and run the integration tests
+  against FerricStore 0.12.19 (from 0.11.17). CLI release tags follow the
+  pinned Go SDK version.
