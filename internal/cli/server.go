@@ -62,6 +62,7 @@ func newServerCommand(dependencies dependencies) *cobra.Command {
 		newServerDoctorCommand(dependencies),
 		newServerConfigCommand(dependencies),
 		newServerSlowlogCommand(dependencies),
+		newServerLatencyCommand(dependencies),
 		newServerClientCommand(dependencies),
 		newServerPersistenceCommand(dependencies),
 		newSDKCommand(dependencies, sdkCommandSpec{
@@ -116,6 +117,26 @@ func newServerSlowlogCommand(dependencies dependencies) *cobra.Command {
 		newSDKCommand(dependencies, sdkCommandSpec{name: "get", use: "get [count]", short: "Get recent slow commands", example: "  ferric server slowlog get 20", wire: []any{"SLOWLOG", "GET"}, minArgs: 0, maxArgs: 1}),
 		newSDKCommand(dependencies, sdkCommandSpec{name: "length", aliases: []string{"len"}, use: "length", short: "Count slowlog entries", example: "  ferric server slowlog length", wire: []any{"SLOWLOG", "LEN"}, minArgs: 0, maxArgs: 0}),
 		newConfirmedSDKCommand(dependencies, sdkCommandSpec{name: "reset", use: "reset", short: "Clear the slowlog", long: "Clear the slowlog. This command requires --yes.", example: "  ferric server slowlog reset --yes", wire: []any{"SLOWLOG", "RESET"}, minArgs: 0, maxArgs: 0}),
+	)
+	return command
+}
+
+func newServerLatencyCommand(dependencies dependencies) *cobra.Command {
+	command := &cobra.Command{
+		Use:     "latency",
+		Short:   "Inspect latency events and command latency",
+		Long:    "Inspect latency spikes and per-command latency. Events are recorded once the latency-monitor-threshold configuration is above 0, and histograms once latency-tracking is yes.",
+		Example: "  ferric server latency latest\n  ferric server latency histogram get set",
+		Args:    cobra.NoArgs,
+		RunE:    func(command *cobra.Command, _ []string) error { return command.Help() },
+	}
+	command.AddCommand(
+		newSDKCommand(dependencies, sdkCommandSpec{name: "latest", use: "latest", short: "Show the latest spike of each latency event", example: "  ferric server latency latest", wire: []any{"LATENCY", "LATEST"}, minArgs: 0, maxArgs: 0}),
+		newSDKCommand(dependencies, sdkCommandSpec{name: "history", use: "history <event>", short: "Show the spike history of one event", example: "  ferric server latency history command", wire: []any{"LATENCY", "HISTORY"}, minArgs: 1, maxArgs: 1}),
+		newSDKCommand(dependencies, sdkCommandSpec{name: "graph", use: "graph <event>", short: "Draw the spike history of one event", example: "  ferric server latency graph command", wire: []any{"LATENCY", "GRAPH"}, minArgs: 1, maxArgs: 1}),
+		newSDKCommand(dependencies, sdkCommandSpec{name: "doctor", use: "doctor", short: "Explain recorded latency events", example: "  ferric server latency doctor", wire: []any{"LATENCY", "DOCTOR"}, minArgs: 0, maxArgs: 0}),
+		newSDKCommand(dependencies, sdkCommandSpec{name: "histogram", use: "histogram [command]...", short: "Show per-command latency histograms", example: "  ferric server latency histogram get set", wire: []any{"LATENCY", "HISTOGRAM"}, minArgs: 0, maxArgs: -1}),
+		newConfirmedSDKCommand(dependencies, sdkCommandSpec{name: "reset", use: "reset [event]...", short: "Clear latency events", long: "Clear recorded latency events, all of them or the ones named. This command requires --yes.", example: "  ferric server latency reset --yes\n  ferric server latency reset --yes command", wire: []any{"LATENCY", "RESET"}, minArgs: 0, maxArgs: -1}),
 	)
 	return command
 }
