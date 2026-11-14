@@ -130,11 +130,11 @@ func storeSpec(group, name, use, short, example string, minArgs, maxArgs int) sd
 		maxArgs: maxArgs,
 	}
 	switch name {
-	case "blpop", "brpop":
+	case "blpop", "brpop", "bzpopmin", "bzpopmax":
 		spec.blocking = secondsWaitAt(-1)
 	case "blmove":
 		spec.blocking = secondsWaitAt(4)
-	case "blmpop":
+	case "blmpop", "bzmpop":
 		spec.blocking = secondsWaitAt(0)
 	case "xread", "xreadgroup":
 		spec.blocking = millisecondsWaitAfter("BLOCK")
@@ -167,6 +167,7 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeStringsGroup, "psetex", "psetex <key> <milliseconds> <value>", "Set a value with a lifetime in milliseconds", "psetex lock:42 1500 owner-a", 3, 3),
 		storeSpec(storeStringsGroup, "getrange", "getrange <key> <start> <end>", "Get a byte range from a string", "getrange document:42 0 99", 3, 3),
 		storeSpec(storeStringsGroup, "setrange", "setrange <key> <offset> <value>", "Overwrite a byte range in a string", "setrange document:42 0 prefix", 3, 3),
+		storeSpec(storeStringsGroup, "lcs", "lcs <key1> <key2> [LEN] [IDX] [MINMATCHLEN len] [WITHMATCHLEN]", "Find the longest common subsequence of two strings", "lcs draft:1 draft:2 LEN", 2, -1),
 
 		// Hashes.
 		storeSpec(storeHashesGroup, "hset", "hset <key> <field> <value> [field value...]", "Set one or more hash fields", "hset user:42 name Ada active true", 3, -1),
@@ -193,6 +194,9 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeHashesGroup, "hpexpireat", "hpexpireat <key> <unix-milliseconds> FIELDS <count> <field>...", "Set hash-field expiry at a Unix millisecond timestamp", "hpexpireat user:42 1800000000000 FIELDS 1 session", 5, -1),
 		storeSpec(storeHashesGroup, "hexpiretime", "hexpiretime <key> FIELDS <count> <field>...", "Get hash-field expiry as Unix seconds", "hexpiretime user:42 FIELDS 1 session", 4, -1),
 		storeSpec(storeHashesGroup, "hpexpiretime", "hpexpiretime <key> FIELDS <count> <field>...", "Get hash-field expiry as Unix milliseconds", "hpexpiretime user:42 FIELDS 1 session", 4, -1),
+		storeSpec(storeHashesGroup, "hgetdel", "hgetdel <key> FIELDS <count> <field>...", "Get and delete hash fields", "hgetdel user:42 FIELDS 1 session", 4, -1),
+		storeSpec(storeHashesGroup, "hgetex", "hgetex <key> [EX seconds|PX ms|EXAT unix|PXAT unix-ms|PERSIST] FIELDS <count> <field>...", "Get hash fields and change their expiry", "hgetex user:42 EX 300 FIELDS 1 session", 4, -1),
+		storeSpec(storeHashesGroup, "hsetex", "hsetex <key> [FNX|FXX] [EX seconds|PX ms|EXAT unix|PXAT unix-ms|KEEPTTL] FIELDS <count> <field> <value>...", "Set hash fields with an expiry", "hsetex user:42 EX 300 FIELDS 1 session active", 5, -1),
 
 		// Lists.
 		storeSpec(storeListsGroup, "lpush", "lpush <key> <element>...", "Prepend elements to a list", "lpush jobs job-3 job-2 job-1", 2, -1),
@@ -215,6 +219,7 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeListsGroup, "brpop", "brpop <key>... <timeout>", "Block while popping from list tails", "brpop high low 5", 2, -1),
 		storeSpec(storeListsGroup, "blmove", "blmove <source> <destination> LEFT|RIGHT LEFT|RIGHT <timeout>", "Block while moving an element between lists", "blmove pending running LEFT RIGHT 5", 5, 5),
 		storeSpec(storeListsGroup, "blmpop", "blmpop <timeout> <numkeys> <key>... LEFT|RIGHT [COUNT count]", "Block while popping from multiple lists", "blmpop 5 2 high low LEFT COUNT 1", 4, -1),
+		storeSpec(storeListsGroup, "lmpop", "lmpop <numkeys> <key>... LEFT|RIGHT [COUNT count]", "Pop from the first non-empty list", "lmpop 2 high low LEFT COUNT 1", 3, -1),
 
 		// Sets.
 		storeSpec(storeSetsGroup, "sadd", "sadd <key> <member>...", "Add members to a set", "sadd online user:1 user:2", 2, -1),
@@ -253,6 +258,24 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeSortedSetsGroup, "zscan", "zscan <key> <cursor> [MATCH pattern] [COUNT count]", "Incrementally scan a sorted set", "zscan leaderboard 0 COUNT 100", 2, -1),
 		storeSpec(storeSortedSetsGroup, "zcard", "zcard <key>", "Count sorted-set members", "zcard leaderboard", 1, 1),
 		storeSpec(storeSortedSetsGroup, "zrem", "zrem <key> <member>...", "Remove sorted-set members", "zrem leaderboard former-user", 2, -1),
+		storeSpec(storeSortedSetsGroup, "zunion", "zunion <numkeys> <key>... [WEIGHTS weight...] [AGGREGATE SUM|MIN|MAX] [WITHSCORES]", "Return the union of sorted sets", "zunion 2 scores:a scores:b WITHSCORES", 2, -1),
+		storeSpec(storeSortedSetsGroup, "zunionstore", "zunionstore <destination> <numkeys> <key>... [WEIGHTS weight...] [AGGREGATE SUM|MIN|MAX]", "Store the union of sorted sets", "zunionstore scores:all 2 scores:a scores:b", 3, -1),
+		storeSpec(storeSortedSetsGroup, "zinter", "zinter <numkeys> <key>... [WEIGHTS weight...] [AGGREGATE SUM|MIN|MAX] [WITHSCORES]", "Return the intersection of sorted sets", "zinter 2 scores:a scores:b WITHSCORES", 2, -1),
+		storeSpec(storeSortedSetsGroup, "zinterstore", "zinterstore <destination> <numkeys> <key>... [WEIGHTS weight...] [AGGREGATE SUM|MIN|MAX]", "Store the intersection of sorted sets", "zinterstore scores:both 2 scores:a scores:b", 3, -1),
+		storeSpec(storeSortedSetsGroup, "zintercard", "zintercard <numkeys> <key>... [LIMIT limit]", "Count a sorted-set intersection", "zintercard 2 scores:a scores:b LIMIT 100", 2, -1),
+		storeSpec(storeSortedSetsGroup, "zdiff", "zdiff <numkeys> <key>... [WITHSCORES]", "Return the difference between sorted sets", "zdiff 2 scores:a scores:b WITHSCORES", 2, -1),
+		storeSpec(storeSortedSetsGroup, "zdiffstore", "zdiffstore <destination> <numkeys> <key>...", "Store the difference between sorted sets", "zdiffstore scores:only-a 2 scores:a scores:b", 3, -1),
+		storeSpec(storeSortedSetsGroup, "zrangestore", "zrangestore <destination> <source> <min> <max> [BYSCORE|BYLEX] [REV] [LIMIT offset count]", "Store a sorted-set range", "zrangestore top10 leaderboard 0 9", 4, -1),
+		storeSpec(storeSortedSetsGroup, "zlexcount", "zlexcount <key> <min> <max>", "Count members in a lexicographical range", "zlexcount names '[a' '(c'", 3, 3),
+		storeSpec(storeSortedSetsGroup, "zrangebylex", "zrangebylex <key> <min> <max> [LIMIT offset count]", "Return members in a lexicographical range", "zrangebylex names - + LIMIT 0 10", 3, 6),
+		storeSpec(storeSortedSetsGroup, "zrevrangebylex", "zrevrangebylex <key> <max> <min> [LIMIT offset count]", "Return members in a descending lexicographical range", "zrevrangebylex names + - LIMIT 0 10", 3, 6),
+		storeSpec(storeSortedSetsGroup, "zremrangebylex", "zremrangebylex <key> <min> <max>", "Remove members in a lexicographical range", "zremrangebylex names '[a' '(c'", 3, 3),
+		storeSpec(storeSortedSetsGroup, "zremrangebyrank", "zremrangebyrank <key> <start> <stop>", "Remove members in a rank range", "zremrangebyrank leaderboard 0 -101", 3, 3),
+		storeSpec(storeSortedSetsGroup, "zremrangebyscore", "zremrangebyscore <key> <min> <max>", "Remove members in a score range", "zremrangebyscore leaderboard -inf 10", 3, 3),
+		storeSpec(storeSortedSetsGroup, "zmpop", "zmpop <numkeys> <key>... MIN|MAX [COUNT count]", "Pop from the first non-empty sorted set", "zmpop 2 queue:a queue:b MIN COUNT 1", 3, -1),
+		storeSpec(storeSortedSetsGroup, "bzpopmin", "bzpopmin <key>... <timeout>", "Block while removing lowest-score members", "bzpopmin queue:a queue:b 5", 2, -1),
+		storeSpec(storeSortedSetsGroup, "bzpopmax", "bzpopmax <key>... <timeout>", "Block while removing highest-score members", "bzpopmax queue:a queue:b 5", 2, -1),
+		storeSpec(storeSortedSetsGroup, "bzmpop", "bzmpop <timeout> <numkeys> <key>... MIN|MAX [COUNT count]", "Block while popping from multiple sorted sets", "bzmpop 5 2 queue:a queue:b MIN COUNT 1", 4, -1),
 
 		// Streams.
 		storeSpec(storeStreamsGroup, "xadd", "xadd <key> <id> <field> <value>...", "Append an entry to a stream", "xadd events '*' type signup user 42", 4, -1),
@@ -266,6 +289,10 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeStreamsGroup, "xgroup", "xgroup CREATE <key> <group> <id> [MKSTREAM]", "Manage stream consumer groups", "xgroup CREATE events workers 0 MKSTREAM", 4, -1),
 		storeSpec(storeStreamsGroup, "xreadgroup", "xreadgroup GROUP <group> <consumer> [options...] STREAMS <key>... <id>...", "Read through a stream consumer group", "xreadgroup GROUP workers worker-1 COUNT 10 STREAMS events '>'", 6, -1),
 		storeSpec(storeStreamsGroup, "xack", "xack <key> <group> <id>...", "Acknowledge stream entries", "xack events workers 1700000000000-0", 3, -1),
+		storeSpec(storeStreamsGroup, "xpending", "xpending <key> <group> [[IDLE min-idle-ms] <start> <end> <count> [consumer]]", "Inspect a consumer group's pending entries", "xpending events workers - + 10", 2, -1),
+		storeSpec(storeStreamsGroup, "xclaim", "xclaim <key> <group> <consumer> <min-idle-ms> <id>... [options...]", "Take over pending stream entries", "xclaim events workers worker-2 60000 1700000000000-0", 5, -1),
+		storeSpec(storeStreamsGroup, "xautoclaim", "xautoclaim <key> <group> <consumer> <min-idle-ms> <start> [COUNT count] [JUSTID]", "Take over idle pending stream entries", "xautoclaim events workers worker-2 60000 0-0 COUNT 10", 5, -1),
+		storeSpec(storeStreamsGroup, "xsetid", "xsetid <key> <last-id> [ENTRIESADDED count] [MAXDELETEDID id]", "Set a stream's last entry ID", "xsetid events 1700000000000-0", 2, -1),
 
 		// Generic keys and expiry.
 		storeSpec(storeKeysGroup, "del", "del <key>...", "Delete keys", "del session:1 session:2", 1, -1),
@@ -285,6 +312,12 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeKeysGroup, "ttl", "ttl <key>", "Get key expiry in seconds", "ttl session:42", 1, 1),
 		storeSpec(storeKeysGroup, "pttl", "pttl <key>", "Get key expiry in milliseconds", "pttl session:42", 1, 1),
 		storeSpec(storeKeysGroup, "persist", "persist <key>", "Remove key expiry", "persist user:42", 1, 1),
+		storeSpec(storeKeysGroup, "expiretime", "expiretime <key>", "Get key expiry as Unix seconds", "expiretime session:42", 1, 1),
+		storeSpec(storeKeysGroup, "pexpiretime", "pexpiretime <key>", "Get key expiry as Unix milliseconds", "pexpiretime session:42", 1, 1),
+		storeSpec(storeKeysGroup, "touch", "touch <key>...", "Count existing keys and mark them accessed", "touch user:1 user:2", 1, -1),
+		storeSpec(storeKeysGroup, "unlink", "unlink <key>...", "Delete keys (Redis UNLINK)", "unlink session:1 session:2", 1, -1),
+		storeSpec(storeKeysGroup, "sort", "sort <key> [BY pattern] [LIMIT offset count] [GET pattern...] [ASC|DESC] [ALPHA] [STORE destination]", "Sort a list, set or sorted set", "sort scores DESC LIMIT 0 10", 1, -1),
+		storeSpec(storeKeysGroup, "sort_ro", "sort_ro <key> [BY pattern] [LIMIT offset count] [GET pattern...] [ASC|DESC] [ALPHA]", "Sort without storing", "sort_ro scores DESC LIMIT 0 10", 1, -1),
 		storeSpec(storeKeysGroup, "object", "object <subcommand> <key>", "Inspect key internals", "object ENCODING user:42", 2, -1),
 		storeSpec(storeKeysGroup, "wait", "wait <replicas> <timeout-ms>", "Wait for replica acknowledgements", "wait 1 1000", 2, 2),
 
@@ -295,6 +328,8 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeSpecializedGroup, "bitcount", "bitcount <key> [start end [BYTE|BIT]]", "Count set bits", "bitcount active-days", 1, -1),
 		storeSpec(storeSpecializedGroup, "bitop", "bitop <operation> <destination> <key>...", "Apply a bitmap operation", "bitop AND both active-a active-b", 3, -1),
 		storeSpec(storeSpecializedGroup, "bitpos", "bitpos <key> <bit> [start [end [BYTE|BIT]]]", "Find the first matching bit", "bitpos active-days 1", 2, -1),
+		storeSpec(storeSpecializedGroup, "bitfield", "bitfield <key> [GET type offset] [SET type offset value] [INCRBY type offset increment] [OVERFLOW WRAP|SAT|FAIL]...", "Read and change integer fields in a string", "bitfield counters INCRBY u8 0 1", 1, -1),
+		storeSpec(storeSpecializedGroup, "bitfield_ro", "bitfield_ro <key> GET <type> <offset>...", "Read integer fields in a string", "bitfield_ro counters GET u8 0", 1, -1),
 		storeSpec(storeSpecializedGroup, "pfadd", "pfadd <key> <element>...", "Add HyperLogLog elements", "pfadd visitors user:1 user:2", 2, -1),
 		storeSpec(storeSpecializedGroup, "pfcount", "pfcount <key>...", "Estimate HyperLogLog cardinality", "pfcount visitors", 1, -1),
 		storeSpec(storeSpecializedGroup, "pfmerge", "pfmerge <destination> <source>...", "Merge HyperLogLogs", "pfmerge visitors:all visitors:a visitors:b", 2, -1),
@@ -310,6 +345,7 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeSpecializedGroup, "bf.mexists", "bf.mexists <key> <item>...", "Test Bloom filter items", "bf.mexists seen event:1 event:2", 2, -1),
 		storeSpec(storeSpecializedGroup, "bf.card", "bf.card <key>", "Get Bloom filter cardinality", "bf.card seen", 1, 1),
 		storeSpec(storeSpecializedGroup, "bf.info", "bf.info <key>", "Inspect a Bloom filter", "bf.info seen", 1, 1),
+		storeSpec(storeSpecializedGroup, "bf.insert", "bf.insert <key> [CAPACITY n] [ERROR rate] [EXPANSION n] [NOCREATE] [NONSCALING] ITEMS <item>...", "Add Bloom filter items, creating the filter if needed", "bf.insert seen CAPACITY 100000 ITEMS event:1 event:2", 3, -1),
 		storeSpec(storeSpecializedGroup, "cf.add", "cf.add <key> <item>", "Add an item to a Cuckoo filter", "cf.add seen event:42", 2, 2),
 		storeSpec(storeSpecializedGroup, "cf.reserve", "cf.reserve <key> <capacity>", "Initialize a Cuckoo filter", "cf.reserve seen 100000", 2, 2),
 		storeSpec(storeSpecializedGroup, "cf.addnx", "cf.addnx <key> <item>", "Add a Cuckoo item only when absent", "cf.addnx seen event:42", 2, 2),
@@ -318,6 +354,8 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeSpecializedGroup, "cf.del", "cf.del <key> <item>", "Delete a Cuckoo filter item", "cf.del seen event:42", 2, 2),
 		storeSpec(storeSpecializedGroup, "cf.count", "cf.count <key> <item>", "Count a Cuckoo filter item", "cf.count seen event:42", 2, 2),
 		storeSpec(storeSpecializedGroup, "cf.info", "cf.info <key>", "Inspect a Cuckoo filter", "cf.info seen", 1, 1),
+		storeSpec(storeSpecializedGroup, "cf.insert", "cf.insert <key> [CAPACITY n] [NOCREATE] ITEMS <item>...", "Add Cuckoo filter items, creating the filter if needed", "cf.insert seen ITEMS event:1 event:2", 3, -1),
+		storeSpec(storeSpecializedGroup, "cf.insertnx", "cf.insertnx <key> [CAPACITY n] [NOCREATE] ITEMS <item>...", "Add Cuckoo filter items only when absent", "cf.insertnx seen ITEMS event:1 event:2", 3, -1),
 		storeSpec(storeSpecializedGroup, "cms.initbyprob", "cms.initbyprob <key> <error> <probability>", "Initialize a Count-Min Sketch", "cms.initbyprob frequencies 0.001 0.99", 3, 3),
 		storeSpec(storeSpecializedGroup, "cms.initbydim", "cms.initbydim <key> <width> <depth>", "Initialize a Count-Min Sketch by dimensions", "cms.initbydim frequencies 2000 7", 3, 3),
 		storeSpec(storeSpecializedGroup, "cms.incrby", "cms.incrby <key> <item> <increment>...", "Increment Count-Min Sketch counters", "cms.incrby frequencies apple 1 pear 2", 3, -1),
@@ -330,6 +368,7 @@ func storeCommandSpecs() []sdkCommandSpec {
 		storeSpec(storeSpecializedGroup, "topk.query", "topk.query <key> <item>...", "Test Top-K membership", "topk.query popular apple pear", 2, -1),
 		storeSpec(storeSpecializedGroup, "topk.list", "topk.list <key> [WITHCOUNT]", "List Top-K items", "topk.list popular WITHCOUNT", 1, 2),
 		storeSpec(storeSpecializedGroup, "topk.info", "topk.info <key>", "Inspect a Top-K structure", "topk.info popular", 1, 1),
+		storeSpec(storeSpecializedGroup, "topk.count", "topk.count <key> <item>...", "Estimate Top-K item counts", "topk.count popular apple pear", 2, -1),
 		storeSpec(storeSpecializedGroup, "tdigest.create", "tdigest.create <key> [COMPRESSION value]", "Initialize a t-digest", "tdigest.create latency COMPRESSION 100", 1, -1),
 		storeSpec(storeSpecializedGroup, "tdigest.add", "tdigest.add <key> <value>...", "Add t-digest observations", "tdigest.add latency 10.5 12.0 20.1", 2, -1),
 		storeSpec(storeSpecializedGroup, "tdigest.reset", "tdigest.reset <key>", "Reset a t-digest while preserving compression", "tdigest.reset latency", 1, 1),

@@ -67,6 +67,16 @@ Versioning.
   provenance plus a GitHub artifact attestation.
 - Lockstep CLI release tags that are validated against the declared
   FerricStore OSS compatibility line and pinned Go SDK version.
+- `ferric store` helpers for data commands FerricStore gained up to 0.12.17,
+  which before needed `ferric store command`: `lcs`; `hgetdel`, `hgetex`,
+  `hsetex`; `lmpop`; `zunion`, `zunionstore`, `zinter`, `zinterstore`,
+  `zintercard`, `zdiff`, `zdiffstore`, `zrangestore`, `zlexcount`,
+  `zrangebylex`, `zrevrangebylex`, `zremrangebylex`, `zremrangebyrank`,
+  `zremrangebyscore`, `zmpop`, `bzpopmin`, `bzpopmax`, `bzmpop`; `xpending`,
+  `xclaim`, `xautoclaim`, `xsetid`; `expiretime`, `pexpiretime`, `touch`,
+  `unlink`, `sort`, `sort_ro`; `bitfield`, `bitfield_ro`, `bf.insert`,
+  `cf.insert`, `cf.insertnx` and `topk.count`. The blocking ones refuse a wait
+  longer than `--timeout`, like `blpop`.
 
 ### Changed
 

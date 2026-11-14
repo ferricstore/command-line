@@ -26,37 +26,7 @@ func TestIntegrationOSSWorkflowQueryAndSchedule(t *testing.T) {
 		t.Skip("OSS CLI integration is run by scripts/integration-login-oss.sh")
 	}
 
-	address := requiredCLIIntegrationEnv(t, "FERRICSTORE_OSS_ADDR")
-	username := requiredCLIIntegrationEnv(t, "FERRICSTORE_OSS_USERNAME")
-	password := requiredCLIIntegrationEnv(t, "FERRICSTORE_OSS_PASSWORD")
-	profileName := "oss-integration"
-	profiles := profile.NewFileStore(t.TempDir() + "/profiles.json")
-	credentials := newIntegrationCredentialStore()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := profiles.Put(ctx, profile.Profile{
-		Name: profileName,
-		URL:  "ferric://" + address,
-		Authentication: profile.Authentication{
-			Method:   profile.AuthMethodPassword,
-			Username: username,
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := credentials.Put(ctx, profileName, password); err != nil {
-		t.Fatal(err)
-	}
-	connections := connection.NewService(
-		profiles,
-		credentials,
-		connection.NewPasswordProvider(ferric.PasswordClientFactory{}),
-	)
-	options := []Option{
-		WithConnectionService(connections),
-		WithProfileManager(profiles),
-		WithCredentialStore(credentials),
-	}
+	options := ossIntegrationOptions(t)
 
 	suffix := strconv.FormatInt(time.Now().UnixNano(), 36)
 	flowType := "cli-query-" + suffix
@@ -142,6 +112,42 @@ func TestIntegrationOSSWorkflowQueryAndSchedule(t *testing.T) {
 	}
 	if every, _ := described["every_ms"].(float64); every != float64(time.Hour.Milliseconds()) {
 		t.Fatalf("schedule every_ms = %#v", described["every_ms"])
+	}
+}
+
+// ossIntegrationOptions points the CLI at the server scripts/integration-login-oss.sh started.
+func ossIntegrationOptions(t *testing.T) []Option {
+	t.Helper()
+	address := requiredCLIIntegrationEnv(t, "FERRICSTORE_OSS_ADDR")
+	username := requiredCLIIntegrationEnv(t, "FERRICSTORE_OSS_USERNAME")
+	password := requiredCLIIntegrationEnv(t, "FERRICSTORE_OSS_PASSWORD")
+	profileName := "oss-integration"
+	profiles := profile.NewFileStore(t.TempDir() + "/profiles.json")
+	credentials := newIntegrationCredentialStore()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := profiles.Put(ctx, profile.Profile{
+		Name: profileName,
+		URL:  "ferric://" + address,
+		Authentication: profile.Authentication{
+			Method:   profile.AuthMethodPassword,
+			Username: username,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := credentials.Put(ctx, profileName, password); err != nil {
+		t.Fatal(err)
+	}
+	connections := connection.NewService(
+		profiles,
+		credentials,
+		connection.NewPasswordProvider(ferric.PasswordClientFactory{}),
+	)
+	return []Option{
+		WithConnectionService(connections),
+		WithProfileManager(profiles),
+		WithCredentialStore(credentials),
 	}
 }
 

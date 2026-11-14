@@ -79,6 +79,77 @@ func TestStoreHelpersAcceptProtocolMinimumArguments(t *testing.T) {
 	}
 }
 
+// Data commands the server gained in 0.12.16 and 0.12.17 (and a few older
+// ones) each have a helper that sends the Redis command unchanged.
+func TestStoreHelpersCoverServerDataCommands(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "lcs", args: []string{"draft:1", "draft:2", "LEN"}},
+		{name: "hgetdel", args: []string{"user:42", "FIELDS", "1", "session"}},
+		{name: "hgetex", args: []string{"user:42", "EX", "300", "FIELDS", "1", "session"}},
+		{name: "hsetex", args: []string{"user:42", "EX", "300", "FIELDS", "1", "session", "active"}},
+		{name: "lmpop", args: []string{"2", "high", "low", "LEFT"}},
+		{name: "zunion", args: []string{"2", "scores:a", "scores:b", "WITHSCORES"}},
+		{name: "zunionstore", args: []string{"scores:all", "2", "scores:a", "scores:b"}},
+		{name: "zinter", args: []string{"2", "scores:a", "scores:b"}},
+		{name: "zinterstore", args: []string{"scores:both", "2", "scores:a", "scores:b"}},
+		{name: "zintercard", args: []string{"2", "scores:a", "scores:b"}},
+		{name: "zdiff", args: []string{"2", "scores:a", "scores:b"}},
+		{name: "zdiffstore", args: []string{"scores:only-a", "2", "scores:a", "scores:b"}},
+		{name: "zrangestore", args: []string{"top10", "leaderboard", "0", "9"}},
+		{name: "zlexcount", args: []string{"names", "[a", "(c"}},
+		{name: "zrangebylex", args: []string{"names", "-", "+"}},
+		{name: "zrevrangebylex", args: []string{"names", "+", "-"}},
+		{name: "zremrangebylex", args: []string{"names", "[a", "(c"}},
+		{name: "zremrangebyrank", args: []string{"leaderboard", "0", "-101"}},
+		{name: "zremrangebyscore", args: []string{"leaderboard", "-inf", "10"}},
+		{name: "zmpop", args: []string{"2", "queue:a", "queue:b", "MIN"}},
+		{name: "bzpopmin", args: []string{"queue:a", "5"}},
+		{name: "bzpopmax", args: []string{"queue:a", "5"}},
+		{name: "bzmpop", args: []string{"5", "1", "queue:a", "MIN"}},
+		{name: "xpending", args: []string{"events", "workers"}},
+		{name: "xclaim", args: []string{"events", "workers", "worker-2", "60000", "1700000000000-0"}},
+		{name: "xautoclaim", args: []string{"events", "workers", "worker-2", "60000", "0-0"}},
+		{name: "xsetid", args: []string{"events", "1700000000000-0"}},
+		{name: "expiretime", args: []string{"session:42"}},
+		{name: "pexpiretime", args: []string{"session:42"}},
+		{name: "touch", args: []string{"user:1", "user:2"}},
+		{name: "unlink", args: []string{"session:1", "session:2"}},
+		{name: "sort", args: []string{"scores"}},
+		{name: "sort_ro", args: []string{"scores"}},
+		{name: "bitfield", args: []string{"counters", "INCRBY", "u8", "0", "1"}},
+		{name: "bitfield_ro", args: []string{"counters", "GET", "u8", "0"}},
+		{name: "bf.insert", args: []string{"seen", "ITEMS", "event:1"}},
+		{name: "cf.insert", args: []string{"seen", "ITEMS", "event:1"}},
+		{name: "cf.insertnx", args: []string{"seen", "ITEMS", "event:1"}},
+		{name: "topk.count", args: []string{"popular", "apple"}},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			client := &cliConnectionClient{result: "OK"}
+			command := New(buildinfo.Info{}, WithConnectionService(newCLIConnectionService(client)))
+			command.SetArgs(append([]string{"--profile", "production", "store", test.name}, test.args...))
+
+			if err := command.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			want := []any{strings.ToUpper(test.name)}
+			for _, argument := range test.args {
+				want = append(want, argument)
+			}
+			if !reflect.DeepEqual(client.command, want) {
+				t.Fatalf("SDK command = %#v, want %#v", client.command, want)
+			}
+		})
+	}
+}
+
 func TestBlockingStoreHelpersRejectWaitLongerThanCommandTimeoutBeforeConnecting(t *testing.T) {
 	t.Parallel()
 
@@ -90,6 +161,9 @@ func TestBlockingStoreHelpersRejectWaitLongerThanCommandTimeoutBeforeConnecting(
 		{name: "brpop", args: []string{"jobs", "30"}},
 		{name: "blmove", args: []string{"pending", "running", "LEFT", "RIGHT", "30"}},
 		{name: "blmpop", args: []string{"30", "1", "jobs", "LEFT"}},
+		{name: "bzpopmin", args: []string{"queue:a", "30"}},
+		{name: "bzpopmax", args: []string{"queue:a", "30"}},
+		{name: "bzmpop", args: []string{"30", "1", "queue:a", "MIN"}},
 		{name: "xread", args: []string{"BLOCK", "30000", "STREAMS", "events", "0"}},
 		{name: "xreadgroup", args: []string{"GROUP", "workers", "worker-1", "BLOCK", "30000", "STREAMS", "events", ">"}},
 		{name: "wait", args: []string{"1", "30000"}},
