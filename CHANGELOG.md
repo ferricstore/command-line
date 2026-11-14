@@ -103,3 +103,5 @@ Versioning.
   reachable vulnerabilities GO-2026-6617 (`net/http`, fixed in 1.26.9) and
   GO-2026-6809 (`crypto/x509`, fixed in 1.26.10), which govulncheck reports in
   the HTTPS and Platform API paths.
+- Build with Go 1.26.11 (from 1.26.10), which fixes GO-2026-6859 in
+  `net/http`; govulncheck reported it as reachable.

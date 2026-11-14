@@ -1,6 +1,6 @@
 module github.com/ferricstore/command-line
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/ferricstore/ferricstore-go v0.13.1
