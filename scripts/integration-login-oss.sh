@@ -87,7 +87,7 @@ export FERRICSTORE_OSS_ADDR="127.0.0.1:${protected_port}"
 export FERRICSTORE_OSS_LOGIN_TEST=1
 wait_for_test ./internal/auth '^TestIntegrationOSSLogin$'
 export FERRICSTORE_OSS_CLI_TEST=1
-run_go_test -tags=integration -count=1 -run '^TestIntegrationOSSWorkflowQueryAndSchedule$' ./internal/cli
+run_go_test -tags=integration -count=1 -run '^TestIntegrationOSS(WorkflowQueryAndSchedule|StoreDataCommands)$' ./internal/cli
 
 if command -v go >/dev/null 2>&1; then
   go build -o "$binary_path" ./cmd/ferric
