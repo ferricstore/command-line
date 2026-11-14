@@ -77,6 +77,12 @@ Versioning.
   `unlink`, `sort`, `sort_ro`; `bitfield`, `bitfield_ro`, `bf.insert`,
   `cf.insert`, `cf.insertnx` and `topk.count`. The blocking ones refuse a wait
   longer than `--timeout`, like `blpop`.
+- `ferric cluster features` and `ferric cluster features raise <level> --yes`
+  (commands from newer releases stay refused until the level is raised);
+  `ferric pubsub spublish`, `shard-channels` and `shard-subscribers` for
+  sharded Pub/Sub; `ferric acl cat`, `genpass`, `log`, `log-reset --yes` and
+  `dryrun`; and `ferric server latency` (`latest`, `history`, `graph`,
+  `doctor`, `histogram`, `reset --yes`).
 
 ### Changed
 

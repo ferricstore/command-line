@@ -34,7 +34,7 @@ func TestIntegrationOSSStoreDataCommands(t *testing.T) {
 
 	// XCLAIM, XAUTOCLAIM, BITFIELD and others need feature level 11 or 12; a
 	// fresh single node starts lower until an operator raises it.
-	runIntegrationCLI(t, options, "store", "command", "CLUSTER.FEATURES.RAISE", "12")
+	runIntegrationCLI(t, options, "cluster", "features", "raise", "12", "--yes")
 
 	store("zadd", key("za"), "1", "a", "2", "b", "3", "c")
 	store("zadd", key("zb"), "2", "b", "3", "c", "4", "d")

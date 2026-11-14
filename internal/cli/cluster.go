@@ -36,7 +36,33 @@ func newClusterCommand(dependencies dependencies) *cobra.Command {
 		newClusterFailoverCommand(dependencies),
 		newClusterPromoteCommand(dependencies),
 		newClusterDemoteCommand(dependencies),
+		newClusterFeaturesCommand(dependencies),
 	)
+	return command
+}
+
+func newClusterFeaturesCommand(dependencies dependencies) *cobra.Command {
+	command := newSDKCommand(dependencies, sdkCommandSpec{
+		name: "features", use: "features", short: "Show the cluster feature level",
+		long:    "Show the cluster feature level and the highest level every member supports. Commands added by newer releases stay refused until the level is raised.",
+		example: "  ferric cluster features\n  ferric cluster features raise 12 --yes",
+		wire:    []any{"CLUSTER.FEATURES"}, minArgs: 0, maxArgs: 0,
+	})
+	command.AddCommand(newConfirmedClusterCommand(dependencies, confirmedClusterSpec{
+		use: "raise <level>", short: "Raise the cluster feature level once every node runs a release that supports it",
+		example: "  ferric cluster features raise 12 --yes", operation: "raise cluster feature level", args: cobra.ExactArgs(1),
+		run: func(ctx context.Context, client connection.Client, args []string) (any, error) {
+			level, err := strconv.Atoi(args[0])
+			if err != nil || level <= 0 {
+				return nil, errors.New("level must be a positive integer")
+			}
+			commander, err := requireClientCapability[sdkCommander](client, "cluster feature levels")
+			if err != nil {
+				return nil, err
+			}
+			return commander.Command(ctx, "CLUSTER.FEATURES.RAISE", strconv.Itoa(level))
+		},
+	}))
 	return command
 }
 

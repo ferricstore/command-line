@@ -32,6 +32,11 @@ func newACLCommand(dependencies dependencies) *cobra.Command {
 		newACLDeleteUserCommand(dependencies),
 		newACLConfirmedNoArgsCommand(dependencies, "save", "Persist ACL state to its configured file", "SAVE"),
 		newACLConfirmedNoArgsCommand(dependencies, "load", "Reload ACL state from its configured file", "LOAD"),
+		newACLReadCommand(dependencies, "cat", "cat [category]", "List ACL categories, or the commands in one", "  ferric acl cat\n  ferric acl cat read", 0, 1),
+		newACLReadCommand(dependencies, "genpass", "genpass [bits]", "Generate a random password", "  ferric acl genpass\n  ferric acl genpass 128", 0, 1),
+		newACLReadCommand(dependencies, "log", "log [count]", "Show recent ACL denials and failed logins", "  ferric acl log\n  ferric acl log 10", 0, 1),
+		newACLLogResetCommand(dependencies),
+		newACLReadCommand(dependencies, "dryrun", "dryrun <username> <command> [arg...]", "Check whether a user may run a command", "  ferric acl dryrun reporter get report:1", 2, -1),
 	)
 	return command
 }
@@ -122,6 +127,25 @@ func newACLDeleteUserCommand(dependencies dependencies) *cobra.Command {
 		},
 	}
 	command.Flags().BoolVar(&yes, "yes", false, "confirm permanent user deletion")
+	return command
+}
+
+func newACLLogResetCommand(dependencies dependencies) *cobra.Command {
+	var yes bool
+	command := &cobra.Command{
+		Use:     "log-reset",
+		Short:   "Clear the ACL denial log",
+		Long:    "Clear this node's log of ACL denials and failed logins. This command requires --yes.",
+		Example: "  ferric acl log-reset --yes",
+		Args:    cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			if !yes {
+				return errors.New("ACL log-reset requires --yes")
+			}
+			return runACL(command, dependencies, "reset ACL log", "LOG", []string{"RESET"})
+		},
+	}
+	command.Flags().BoolVar(&yes, "yes", false, "confirm clearing the ACL log")
 	return command
 }
 
