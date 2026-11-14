@@ -307,8 +307,8 @@ repository. See [docs/authentication.md](docs/authentication.md).
 
 ## Compatibility
 
-This revision uses FerricStore Go SDK v0.13.1, and its integration tests run
-against FerricStore 0.12.19. It needs FerricStore 0.11.11 or newer: FQL query,
+This revision uses FerricStore Go SDK v0.14.1, and its integration tests run
+against FerricStore 0.12.20. It needs FerricStore 0.11.11 or newer: FQL query,
 query-index, and the current typed schedule response contracts require that
 server generation.
 
@@ -340,7 +340,7 @@ mise exec -- make snapshot
 
 ## Releases
 
-Pushing a tag matching the pinned Go SDK version, such as `v0.13.1`, runs
+Pushing a tag matching the pinned Go SDK version, such as `v0.14.1`, runs
 the complete test suite and publishes compressed binaries plus checksums
 through GoReleaser. The release fails before publishing if the tag, the version
 in `FERRICSTORE_VERSION`, and the pinned Go SDK version do not match. See

@@ -89,6 +89,10 @@ Versioning.
 - Use FerricStore Go SDK v0.13.1 (from v0.11.11) and run the integration tests
   against FerricStore 0.12.19 (from 0.11.17). CLI release tags follow the
   pinned Go SDK version.
+- Use FerricStore Go SDK v0.14.1 (from v0.13.1), whose HTTP transport sends
+  `FLOW.SPAWN_CHILDREN` as a structured command, so `ferric workflow
+  spawn-children` with child values works over HTTPS. Integration tests run
+  against FerricStore 0.12.20 (from 0.12.19).
 
 ### Fixed
 
